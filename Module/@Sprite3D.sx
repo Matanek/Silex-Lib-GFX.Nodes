@@ -1,0 +1,83 @@
+use GFX.Assets.Image
+use GFX.Color
+use GFX.ECS
+use GFX.Scene3D
+use STD.Math
+
+public class Sprite3D:Node3D {
+    private var current_sprite:Scene3D.Sprite
+
+    var image:Image.Handle {
+        get { return self.current_sprite.image }
+        set(value) { self.current_sprite.image = value }
+    }
+
+    var size:Math.Vec2 {
+        get { return self.current_sprite.size }
+        set(value) { self.current_sprite.size = value }
+    }
+
+    var pivot:Math.Vec2 {
+        get { return self.current_sprite.pivot }
+        set(value) { self.current_sprite.pivot = value }
+    }
+
+    var color:Color {
+        get { return self.current_sprite.color }
+        set(value) { self.current_sprite.color = value }
+    }
+
+    var billboard:Scene3D.Billboard {
+        get { return self.current_sprite.billboard }
+        set(value) { self.current_sprite.billboard = value }
+    }
+
+    var visible:bool {
+        get { return self.current_sprite.visible }
+        set(value) { self.current_sprite.visible = value }
+    }
+
+    init(
+        image:Image.Handle = Image.Handle(),
+        name:str = "Sprite3D",
+        size:Math.Vec2 = Math.Vec2(1.0),
+        pivot:Math.Vec2 = Math.Vec2(0.5),
+        color:Color = Color.white(),
+        billboard:Scene3D.Billboard = Scene3D.Billboard.face_camera,
+        visible:bool = true
+    ):super(name) {
+        self.current_sprite = Scene3D.Sprite(
+            image:image,
+            size:size,
+            pivot:pivot,
+            color:color,
+            billboard:billboard,
+            visible:visible
+        )
+    }
+
+    func region() Image.Region? { return self.current_sprite.region() }
+    func region(value:Image.Region) { self.current_sprite.region(value) }
+    func sampling() Scene3D.Sampling { return self.current_sprite.sampling() }
+    func sampling(value:Scene3D.Sampling) { self.current_sprite.sampling(value) }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        world.insert(entity, self.current_sprite)
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        if sprite3d_changed(world, entity, self.current_sprite) {
+            world.insert(entity, self.current_sprite)
+        }
+    }
+}
+
+local func sprite3d_changed(
+    world:@ECS.World,
+    entity:ECS.Entity,
+    expected:Scene3D.Sprite
+) bool {
+    return expected != world.get<Scene3D.Sprite>(entity)
+}

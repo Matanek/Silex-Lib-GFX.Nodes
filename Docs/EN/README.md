@@ -11,6 +11,8 @@ Each node class represents one capability:
 - `Node` owns a name, parent, children, and lifecycle;
 - `Node2D` adds a local `GFX.Scene2D.Transform`;
 - `Node3D` adds a local `GFX.Scene3D.Transform`;
+- `Camera2D` and `Camera3D` add the camera for their scene;
+- `Sprite2D` and `Sprite3D` add a sprite using a `GFX.Assets` image;
 - `Canvas2D` adds a `GFX.Canvas` vector drawing rendered by Scene2D.
 
 The generic `Node` has no dimension and carries no transform. A spatial node
@@ -62,6 +64,29 @@ func main() {
 `Plugins.Nodes` installs Application integration, the ECS world, and time.
 Rendering remains explicit: add `Plugins.Scene2D()` for 2D nodes,
 `Plugins.Scene3D()` for 3D nodes, or both.
+
+## Cameras and sprites
+
+Scene specializations keep a direct object API while mounting their
+corresponding ECS components. There is no generic `add_component` method: each
+Node carries only its own capability.
+
+```silex
+var camera = Nodes.Camera2D(zoom:2.0)
+var sprite = Nodes.Sprite2D(image, name:"Player", layer:1)
+
+root.add_child(camera)
+root.add_child(sprite)
+
+sprite.visible = false
+camera.zoom = 3.0
+```
+
+`Camera2D : Node2D`, `Sprite2D : Node2D`, `Camera3D : Node3D`, and
+`Sprite3D : Node3D`. On each cycle, their properties synchronize to
+`GFX.Scene2D.Camera`, `GFX.Scene2D.Sprite`, `GFX.Scene3D.Camera`, and
+`GFX.Scene3D.Sprite`. Scene2D and Scene3D therefore remain the sole rendering
+owners.
 
 ## Lifecycle
 

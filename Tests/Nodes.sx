@@ -89,3 +89,86 @@ test "report the complete dynamic node ancestry" {
     assert(identity.types[1] == "GFX.Nodes.Node2D")
     assert(identity.types[2] == "Actor2D")
 }
+
+test "mount and synchronize camera and sprite nodes" {
+    var camera_2d = Nodes.Camera2D(
+        name:"Camera2D",
+        zoom:2.0,
+        viewport_size:Math.Vec2(1280.0, 720.0),
+        order:1
+    )
+    var sprite_2d = Nodes.Sprite2D(
+        name:"Sprite2D",
+        size:Math.Vec2(32.0, 48.0),
+        layer:2,
+        depth:0.25
+    )
+    var camera_3d = Nodes.Camera3D(
+        name:"Camera3D",
+        vertical_fov:0.8,
+        near_plane:0.2,
+        far_plane:500.0,
+        order:3
+    )
+    var sprite_3d = Nodes.Sprite3D(
+        name:"Sprite3D",
+        size:Math.Vec2(3.0, 4.0),
+        billboard:Scene3D.Billboard.none
+    )
+    var root = Nodes.Node("Root")
+    root.add_child(camera_2d)
+    root.add_child(sprite_2d)
+    root.add_child(camera_3d)
+    root.add_child(sprite_3d)
+
+    var application = Application()
+        ..add_plugin(Nodes.Plugin(root))
+    application.prepare()
+    application.run_schedule(Application.Schedule.startup)
+
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    let camera_2d_entity:ECS.Entity = camera_2d.entity()!
+    let sprite_2d_entity:ECS.Entity = sprite_2d.entity()!
+    let camera_3d_entity:ECS.Entity = camera_3d.entity()!
+    let sprite_3d_entity:ECS.Entity = sprite_3d.entity()!
+
+    assert(world.has<Scene2D.Transform>(camera_2d_entity))
+    assert(world.has<Scene2D.Camera>(camera_2d_entity))
+    assert(world.has<Scene2D.Transform>(sprite_2d_entity))
+    assert(world.has<Scene2D.Sprite>(sprite_2d_entity))
+    assert(world.has<Scene3D.Transform>(camera_3d_entity))
+    assert(world.has<Scene3D.Camera>(camera_3d_entity))
+    assert(world.has<Scene3D.Transform>(sprite_3d_entity))
+    assert(world.has<Scene3D.Sprite>(sprite_3d_entity))
+    assert(world.get<Scene2D.Camera>(camera_2d_entity).zoom == 2.0)
+    assert(world.get<Scene2D.Sprite>(sprite_2d_entity).layer == 2)
+    assert(world.get<Scene3D.Camera>(camera_3d_entity).far_plane == 500.0)
+    assert(world.get<Scene3D.Sprite>(sprite_3d_entity).billboard ==
+        Scene3D.Billboard.none)
+
+    camera_2d.active = false
+    camera_2d.zoom = 3.0
+    sprite_2d.visible = false
+    sprite_2d.layer = 7
+    camera_3d.use_orthographic(12.0)
+    camera_3d.order = 8
+    sprite_3d.visible = false
+    sprite_3d.billboard = Scene3D.Billboard.face_camera_y
+    application.run_schedule(Application.Schedule.update)
+
+    let updated_camera_2d = world.get<Scene2D.Camera>(camera_2d_entity)
+    let updated_sprite_2d = world.get<Scene2D.Sprite>(sprite_2d_entity)
+    let updated_camera_3d = world.get<Scene3D.Camera>(camera_3d_entity)
+    let updated_sprite_3d = world.get<Scene3D.Sprite>(sprite_3d_entity)
+    assert(!updated_camera_2d.active)
+    assert(updated_camera_2d.zoom == 3.0)
+    assert(!updated_sprite_2d.visible)
+    assert(updated_sprite_2d.layer == 7)
+    assert(updated_camera_3d.is_orthographic())
+    assert(updated_camera_3d.order == 8)
+    assert(!updated_sprite_3d.visible)
+    assert(updated_sprite_3d.billboard == Scene3D.Billboard.face_camera_y)
+
+    application.run_schedule(Application.Schedule.shutdown)
+}

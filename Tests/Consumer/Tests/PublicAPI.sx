@@ -17,3 +17,23 @@ test "consume Nodes directly and through the GFX plugin catalog" {
     assert(identity.types[1] == "GFX.Nodes.Node2D")
     assert(identity.types[2] == "Player")
 }
+
+test "construct the public camera and sprite node families" {
+    var camera_2d:Nodes.Node = Nodes.Camera2D(name:"Camera2D", zoom:2.0)
+    var sprite_2d:Nodes.Node = Nodes.Sprite2D(name:"Sprite2D", visible:false)
+    var camera_3d = Nodes.Camera3D(name:"Camera3D")
+    var sprite_3d = Nodes.Sprite3D(name:"Sprite3D", visible:false)
+
+    camera_3d.use_orthographic(10.0)
+
+    assert(reflect(camera_2d).types[1] == "GFX.Nodes.Node2D")
+    assert(reflect(camera_2d).type == "GFX.Nodes.Camera2D")
+    assert(reflect(sprite_2d).types[1] == "GFX.Nodes.Node2D")
+    assert(reflect(sprite_2d).type == "GFX.Nodes.Sprite2D")
+    assert(reflect(camera_3d).types[1] == "GFX.Nodes.Node3D")
+    assert(reflect(camera_3d).type == "GFX.Nodes.Camera3D")
+    assert(reflect(sprite_3d).types[1] == "GFX.Nodes.Node3D")
+    assert(reflect(sprite_3d).type == "GFX.Nodes.Sprite3D")
+    assert(camera_3d.is_orthographic())
+    assert(!sprite_3d.visible)
+}

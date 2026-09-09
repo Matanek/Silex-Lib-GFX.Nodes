@@ -1,0 +1,80 @@
+use GFX.ECS
+use GFX.Scene3D
+
+public class Camera3D:Node3D {
+    private var current_camera:Scene3D.Camera
+
+    var active:bool {
+        get { return self.current_camera.active }
+        set(value) { self.current_camera.active = value }
+    }
+
+    var vertical_fov:float {
+        get { return self.current_camera.vertical_fov }
+        set(value) { self.current_camera.vertical_fov = value }
+    }
+
+    var near_plane:float {
+        get { return self.current_camera.near_plane }
+        set(value) { self.current_camera.near_plane = value }
+    }
+
+    var far_plane:float {
+        get { return self.current_camera.far_plane }
+        set(value) { self.current_camera.far_plane = value }
+    }
+
+    var order:int {
+        get { return self.current_camera.order }
+        set(value) { self.current_camera.order = value }
+    }
+
+    init(
+        name:str = "Camera3D",
+        active:bool = true,
+        vertical_fov:float = 1.04719758,
+        near_plane:float = 0.1,
+        far_plane:float = 1000.0,
+        order:int = 0
+    ):super(name) {
+        self.current_camera = Scene3D.Camera(
+            active:active,
+            vertical_fov:vertical_fov,
+            near_plane:near_plane,
+            far_plane:far_plane,
+            order:order
+        )
+    }
+
+    func use_perspective() {
+        self.current_camera.use_perspective()
+    }
+
+    func use_orthographic(height:float) {
+        self.current_camera.use_orthographic(height)
+    }
+
+    func is_orthographic() bool {
+        return self.current_camera.is_orthographic()
+    }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        world.insert(entity, self.current_camera)
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        if camera3d_changed(world, entity, self.current_camera) {
+            world.insert(entity, self.current_camera)
+        }
+    }
+}
+
+local func camera3d_changed(
+    world:@ECS.World,
+    entity:ECS.Entity,
+    expected:Scene3D.Camera
+) bool {
+    return expected != world.get<Scene3D.Camera>(entity)
+}

@@ -11,6 +11,9 @@ Chaque classe de nœud représente une fonctionnalité :
 - `Node` possède un nom, un parent, des enfants et un cycle de vie ;
 - `Node2D` ajoute un `GFX.Scene2D.Transform` local ;
 - `Node3D` ajoute un `GFX.Scene3D.Transform` local ;
+- `Camera2D` et `Camera3D` ajoutent la caméra de leur scène ;
+- `Sprite2D` et `Sprite3D` ajoutent un sprite utilisant une image de
+  `GFX.Assets` ;
 - `Canvas2D` ajoute un dessin vectoriel `GFX.Canvas` rendu par Scene2D.
 
 Le `Node` générique ne connaît aucune dimension et ne transporte aucun
@@ -62,6 +65,29 @@ func main() {
 `Plugins.Nodes` installe l’intégration Application, le monde ECS et le temps.
 Le renderer reste un choix explicite : ajouter `Plugins.Scene2D()` pour les
 nœuds 2D, `Plugins.Scene3D()` pour les nœuds 3D, ou les deux.
+
+## Caméras et sprites
+
+Les spécialisations de scène gardent une API objet directe tout en montant les
+composants ECS correspondants. Il n’existe pas de méthode générique
+`add_component` : chaque Node porte seulement sa fonctionnalité.
+
+```silex
+var camera = Nodes.Camera2D(zoom:2.0)
+var sprite = Nodes.Sprite2D(image, name:"Player", layer:1)
+
+root.add_child(camera)
+root.add_child(sprite)
+
+sprite.visible = false
+camera.zoom = 3.0
+```
+
+`Camera2D : Node2D`, `Sprite2D : Node2D`, `Camera3D : Node3D` et
+`Sprite3D : Node3D`. À chaque cycle, leurs propriétés sont synchronisées vers
+`GFX.Scene2D.Camera`, `GFX.Scene2D.Sprite`, `GFX.Scene3D.Camera` et
+`GFX.Scene3D.Sprite`. Scene2D et Scene3D demeurent donc seuls propriétaires du
+rendu.
 
 ## Cycle de vie
 

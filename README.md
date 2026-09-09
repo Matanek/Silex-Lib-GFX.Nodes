@@ -9,8 +9,10 @@ silex install GFX.Nodes
 ```
 
 The generic `Node` owns tree structure and lifecycle only. `Node2D` and
-`Node3D` add their respective scene transforms, and `Canvas2D` owns vector
-drawing commands backed by `GFX.Canvas`.
+`Node3D` add their respective scene transforms. `Camera2D`, `Camera3D`,
+`Sprite2D`, and `Sprite3D` project object properties into the corresponding
+scene components, while `Canvas2D` owns vector drawing commands backed by
+`GFX.Canvas`.
 
 ## Documentation
 

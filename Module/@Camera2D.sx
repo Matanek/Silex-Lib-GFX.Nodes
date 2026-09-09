@@ -1,0 +1,62 @@
+use GFX.ECS
+use GFX.Scene2D
+use STD.Math
+
+public class Camera2D:Node2D {
+    private var current_camera:Scene2D.Camera
+
+    var active:bool {
+        get { return self.current_camera.active }
+        set(value) { self.current_camera.active = value }
+    }
+
+    var zoom:float {
+        get { return self.current_camera.zoom }
+        set(value) { self.current_camera.zoom = value }
+    }
+
+    var viewport_size:Math.Vec2 {
+        get { return self.current_camera.viewport_size }
+        set(value) { self.current_camera.viewport_size = value }
+    }
+
+    var order:int {
+        get { return self.current_camera.order }
+        set(value) { self.current_camera.order = value }
+    }
+
+    init(
+        name:str = "Camera2D",
+        active:bool = true,
+        zoom:float = 1.0,
+        viewport_size:Math.Vec2 = Math.Vec2(),
+        order:int = 0
+    ):super(name) {
+        self.current_camera = Scene2D.Camera(
+            active:active,
+            zoom:zoom,
+            viewport_size:viewport_size,
+            order:order
+        )
+    }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        world.insert(entity, self.current_camera)
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        if camera2d_changed(world, entity, self.current_camera) {
+            world.insert(entity, self.current_camera)
+        }
+    }
+}
+
+local func camera2d_changed(
+    world:@ECS.World,
+    entity:ECS.Entity,
+    expected:Scene2D.Camera
+) bool {
+    return expected != world.get<Scene2D.Camera>(entity)
+}
