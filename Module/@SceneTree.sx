@@ -1,0 +1,41 @@
+use GFX.ECS
+
+public class SceneTree {
+    private var current_root:Node
+    private var current_running:bool
+    private var current_frame:int
+
+    init(root:Node) {
+        self.current_root = root
+        self.current_running = false
+        self.current_frame = 0
+    }
+
+    func root() Node { return self.current_root }
+    func is_running() bool { return self.current_running }
+    func frame() int { return self.current_frame }
+
+    module func start(world:&ECS.World) {
+        if self.current_running { panic("SceneTree is already running") }
+        self.current_root.mount_subtree(world)
+        self.current_running = true
+    }
+
+    module func process(delta:float, world:&ECS.World) {
+        if !self.current_running {
+            panic("SceneTree must be started before processing")
+        }
+        self.current_root.process_subtree(delta, world)
+        self.current_frame++
+    }
+
+    module func stop(world:&ECS.World) {
+        if !self.current_running { return }
+        self.current_root.unmount_subtree(world)
+        self.current_running = false
+    }
+
+    func print_tree() {
+        self.current_root.print_branch("")
+    }
+}

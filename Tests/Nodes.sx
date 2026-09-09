@@ -1,0 +1,91 @@
+use GFX.Application
+use GFX.Canvas
+use GFX.Color
+use GFX.ECS
+use GFX.Nodes
+use GFX.Scene2D
+use GFX.Scene3D
+use STD.Math
+
+class Actor2D:Nodes.Node2D {
+    var ready_calls:int
+    var process_calls:int
+    var exit_calls:int
+
+    init():super("Actor2D", Math.Vec2(10.0, 20.0)) {
+        self.ready_calls = 0
+        self.process_calls = 0
+        self.exit_calls = 0
+    }
+
+    override func on_ready() { self.ready_calls++ }
+    override func on_process(delta:float) { self.process_calls++ }
+    override func on_exit_tree() { self.exit_calls++ }
+}
+
+test "mount object nodes as ECS entities and preserve dimensional ownership" {
+    var actor = Actor2D()
+    var drawing = Nodes.Canvas2D("Drawing")
+    drawing.position = Math.Vec2(5.0, 2.0)
+    drawing.paint(func(painter:&Canvas.Painter) {
+        painter.fill(
+            Canvas.Circle(Math.Vec2(), 4.0),
+            Canvas.Fill.solid(Color.white())
+        )
+    })
+    actor.add_child(drawing)
+
+    var spatial_3d = Nodes.Node3D(
+        "Spatial3D",
+        Math.Vec3(1.0, 2.0, 3.0)
+    )
+    var root = Nodes.Node("Root")
+    root.add_child(actor)
+    root.add_child(spatial_3d)
+
+    var application = Application()
+        ..add_plugin(Nodes.Plugin(root))
+    application.prepare()
+    application.run_schedule(Application.Schedule.startup)
+
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    let root_entity:ECS.Entity = root.entity()!
+    let actor_entity:ECS.Entity = actor.entity()!
+    let drawing_entity:ECS.Entity = drawing.entity()!
+    let spatial_3d_entity:ECS.Entity = spatial_3d.entity()!
+
+    assert(!world.has<Scene2D.Transform>(root_entity))
+    assert(!world.has<Scene3D.Transform>(root_entity))
+    assert(world.has<Scene2D.Transform>(actor_entity))
+    assert(world.has<Scene2D.Transform>(drawing_entity))
+    assert(world.has<Scene2D.Canvas>(drawing_entity))
+    assert(world.has<Scene3D.Transform>(spatial_3d_entity))
+    assert(world.get<Scene2D.Transform>(drawing_entity).position ==
+        Math.Vec2(15.0, 22.0))
+    assert(world.get<Scene3D.Transform>(spatial_3d_entity).position ==
+        Math.Vec3(1.0, 2.0, 3.0))
+    assert(actor.ready_calls == 1)
+    assert(drawing.command_count() == 1)
+
+    application.run_schedule(Application.Schedule.pre_update)
+    application.run_schedule(Application.Schedule.update)
+    assert(actor.process_calls == 1)
+
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(actor.exit_calls == 1)
+    assert(actor.entity() == null)
+    assert(drawing.entity() == null)
+    assert(spatial_3d.entity() == null)
+}
+
+test "report the complete dynamic node ancestry" {
+    var actor:Nodes.Node = Actor2D()
+    let identity = reflect(actor)
+
+    assert(identity.type == "Actor2D")
+    assert(identity.types.count() == 3)
+    assert(identity.types[0] == "GFX.Nodes.Node")
+    assert(identity.types[1] == "GFX.Nodes.Node2D")
+    assert(identity.types[2] == "Actor2D")
+}

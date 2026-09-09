@@ -1,0 +1,41 @@
+use GFX.Application
+use GFX.ECS
+
+public struct Plugin:Application.Plugin {
+    private var root_node:Node
+
+    init(root:Node) {
+        self.root_node = root
+    }
+
+    func id() str { return "GFX.Nodes.Plugin" }
+
+    func build(application:&Application) {
+        application.add_plugin(ECS.Plugin())
+        application.add_plugin(Application.Time())
+        application.add_resource(SceneTree(self.root_node))
+        application.add_system(Application.Schedule.startup, start_nodes)
+        application.add_system(Application.Schedule.update, update_nodes)
+        application.add_system(Application.Schedule.shutdown, stop_nodes)
+    }
+}
+
+func start_nodes(tree:&SceneTree, world:&ECS.World) {
+    tree.start(world)
+}
+
+func update_nodes(
+    time:@Application.FrameTime,
+    tree:&SceneTree,
+    world:&ECS.World
+) {
+    tree.process(time.delta, world)
+}
+
+func stop_nodes(tree:&SceneTree, world:&ECS.World) {
+    tree.stop(world)
+}
+
+contribute GFX.Plugins {
+    public use GFX.Nodes.Plugin as Nodes
+}

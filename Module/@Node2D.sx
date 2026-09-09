@@ -1,0 +1,88 @@
+use GFX.ECS
+use GFX.Scene2D
+use STD.Math
+
+public class Node2D:Node {
+    private var local_transform:Scene2D.Transform
+
+    var position:Math.Vec2 {
+        get { return self.local_transform.position }
+        set(value) { self.local_transform.position = value }
+    }
+
+    var rotation:float {
+        get { return self.local_transform.rotation }
+        set(value) { self.local_transform.rotation = value }
+    }
+
+    var scale:Math.Vec2 {
+        get { return self.local_transform.scale }
+        set(value) { self.local_transform.scale = value }
+    }
+
+    init(
+        name:str = "Node2D",
+        position:Math.Vec2 = Math.Vec2(),
+        rotation:float = 0.0,
+        scale:Math.Vec2 = Math.Vec2(1.0)
+    ):super(name) {
+        self.local_transform = Scene2D.Transform(
+            position:position,
+            rotation:rotation,
+            scale:scale
+        )
+    }
+
+    func transform() Scene2D.Transform { return self.local_transform }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        world.insert(entity, self.local_transform)
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        var global = self.local_transform
+        if var parent = self.parent() {
+            let candidate:ECS.Entity? = parent.entity()
+            if candidate != null {
+                let parent_entity:ECS.Entity = candidate
+                if world.has<Scene2D.Transform>(parent_entity) {
+                    global = compose_transform(
+                        world.get<Scene2D.Transform>(parent_entity),
+                        self.local_transform
+                    )
+                }
+            }
+        }
+        if transform_changed(world, entity, global) {
+            world.insert(entity, global)
+        }
+    }
+}
+
+func transform_changed(
+    world:@ECS.World,
+    entity:ECS.Entity,
+    expected:Scene2D.Transform
+) bool {
+    return expected != world.get<Scene2D.Transform>(entity)
+}
+
+func compose_transform(
+    parent:Scene2D.Transform,
+    child:Scene2D.Transform
+) Scene2D.Transform {
+    let scaled = child.position.multiply(parent.scale)
+    let cosine = Math.cos(parent.rotation)
+    let sine = Math.sin(parent.rotation)
+    let rotated = Math.Vec2(
+        scaled.x * cosine - scaled.y * sine,
+        scaled.x * sine + scaled.y * cosine
+    )
+    return Scene2D.Transform(
+        position:parent.position.add(rotated),
+        rotation:parent.rotation + child.rotation,
+        scale:parent.scale.multiply(child.scale)
+    )
+}

@@ -1,0 +1,82 @@
+use GFX.ECS
+use GFX.Scene3D
+use STD.Math
+
+public class Node3D:Node {
+    private var local_transform:Scene3D.Transform
+
+    var position:Math.Vec3 {
+        get { return self.local_transform.position }
+        set(value) { self.local_transform.position = value }
+    }
+
+    var rotation:Math.Quat {
+        get { return self.local_transform.rotation }
+        set(value) { self.local_transform.rotation = value }
+    }
+
+    var scale:Math.Vec3 {
+        get { return self.local_transform.scale }
+        set(value) { self.local_transform.scale = value }
+    }
+
+    init(
+        name:str = "Node3D",
+        position:Math.Vec3 = Math.Vec3(),
+        rotation:Math.Quat = Math.Quat(),
+        scale:Math.Vec3 = Math.Vec3(1.0)
+    ):super(name) {
+        self.local_transform = Scene3D.Transform(
+            position:position,
+            rotation:rotation,
+            scale:scale
+        )
+    }
+
+    func transform() Scene3D.Transform { return self.local_transform }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        world.insert(entity, self.local_transform)
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        var global = self.local_transform
+        if var parent = self.parent() {
+            let candidate:ECS.Entity? = parent.entity()
+            if candidate != null {
+                let parent_entity:ECS.Entity = candidate
+                if world.has<Scene3D.Transform>(parent_entity) {
+                    global = compose_transform(
+                        world.get<Scene3D.Transform>(parent_entity),
+                        self.local_transform
+                    )
+                }
+            }
+        }
+        if transform_changed(world, entity, global) {
+            world.insert(entity, global)
+        }
+    }
+}
+
+func transform_changed(
+    world:@ECS.World,
+    entity:ECS.Entity,
+    expected:Scene3D.Transform
+) bool {
+    return expected != world.get<Scene3D.Transform>(entity)
+}
+
+func compose_transform(
+    parent:Scene3D.Transform,
+    child:Scene3D.Transform
+) Scene3D.Transform {
+    let scaled = child.position.multiply(parent.scale)
+    return Scene3D.Transform(
+        position:parent.position.add(parent.rotation.rotate(scaled)),
+        rotation:parent.rotation.multiply(child.rotation).normalized(),
+        scale:parent.scale.multiply(child.scale)
+    )
+}

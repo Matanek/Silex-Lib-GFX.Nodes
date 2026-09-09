@@ -1,0 +1,47 @@
+use GFX.Canvas
+use GFX.ECS
+use GFX.Scene2D
+
+public class Canvas2D:Node2D {
+    private var drawing:Canvas.Canvas
+    private var current_visible:bool
+
+    var visible:bool {
+        get { return self.current_visible }
+        set(value) { self.current_visible = value }
+    }
+
+    init(name:str = "Canvas2D"):super(name) {
+        self.drawing = Canvas.Canvas()
+        self.current_visible = true
+    }
+
+    func canvas() Canvas.Canvas { return self.drawing }
+
+    func paint(callback:func(&Canvas.Painter)) {
+        self.drawing.paint(callback)
+    }
+
+    func clear() { self.drawing.clear() }
+    func command_count() int { return self.drawing.command_count() }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        var placement = Scene2D.Canvas(self.drawing)
+        placement.visible = self.current_visible
+        world.insert(entity, move placement)
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        if canvas_visibility(world, entity) != self.current_visible {
+            var placement = Scene2D.Canvas(self.drawing)
+            placement.visible = self.current_visible
+            world.insert(entity, move placement)
+        }
+    }
+}
+
+func canvas_visibility(world:@ECS.World, entity:ECS.Entity) bool {
+    return world.get<Scene2D.Canvas>(entity).visible
+}

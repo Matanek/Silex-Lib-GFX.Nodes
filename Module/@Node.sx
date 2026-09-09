@@ -1,0 +1,165 @@
+use GFX.ECS
+
+// Dimension-independent scene-tree identity and lifecycle.
+
+public class Node {
+    private let current_name:str
+    private var current_parent:Node? = null
+    private var current_children:Node[]
+    private var current_entity:ECS.Entity? = null
+    private var current_inside_tree:bool
+    private var current_ready_count:int
+    private var current_process_delta:float
+
+    init(name:str = "Node") {
+        self.current_name = name
+        self.current_children = []
+        self.current_inside_tree = false
+        self.current_ready_count = 0
+        self.current_process_delta = 0.0
+    }
+
+    func name() str { return self.current_name }
+    func parent() Node? { return self.current_parent }
+    func children() Node[] { return self.current_children }
+    func child_count() int { return self.current_children.count() }
+    func child(index:int) Node { return self.current_children[index] }
+    func entity() ECS.Entity? { return self.current_entity }
+    func is_inside_tree() bool { return self.current_inside_tree }
+    func ready_count() int { return self.current_ready_count }
+    func process_delta() float { return self.current_process_delta }
+
+    func path() str {
+        if var parent = self.current_parent {
+            return "$(parent.path())/$(self.current_name)"
+        }
+        return "/$(self.current_name)"
+    }
+
+    func add_child(child:Node) Node {
+        if self.current_inside_tree {
+            panic("runtime Node attachment is not implemented")
+        }
+        if child == self {
+            panic("a Node cannot be its own child")
+        }
+        if child.current_parent != null {
+            panic("Node '$(child.name())' already has a parent")
+        }
+        if self.is_below(child) {
+            panic("adding Node '$(child.name())' would create a cycle")
+        }
+        if self.has_child_named(child.name()) {
+            panic("Node '$(self.path())' already has a child named '$(child.name())'")
+        }
+
+        child.current_parent = self
+        self.current_children.append(child)
+        return self
+    }
+
+    func remove_child(child:Node) Node? {
+        if self.current_inside_tree {
+            panic("runtime Node detachment is not implemented")
+        }
+        var index = 0
+        while index < self.current_children.count() {
+            if self.current_children[index] == child {
+                var removed = self.current_children.take(index)
+                removed.current_parent = null
+                return removed
+            }
+            index++
+        }
+        return null
+    }
+
+    protected func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        self.current_entity = entity
+    }
+
+    protected func synchronize(world:&ECS.World, entity:ECS.Entity) {}
+
+    private func ready() {
+        self.current_ready_count++
+        self.on_ready()
+    }
+
+    private func process(delta:float) {
+        self.current_process_delta = delta
+        self.on_process(delta)
+    }
+
+    private func exit_tree() {
+        self.on_exit_tree()
+        self.current_inside_tree = false
+    }
+
+    protected func on_ready() {}
+    protected func on_process(delta:float) {}
+    protected func on_exit_tree() {}
+
+    module func mount_subtree(world:&ECS.World) {
+        if self.current_inside_tree {
+            panic("Node '$(self.path())' is already inside a SceneTree")
+        }
+        let entity = world.spawn(ECS.EntityRecipe())
+        self.current_inside_tree = true
+        self.mount_components(world, entity)
+        self.synchronize(world, entity)
+
+        var children = self.current_children
+        for var child in children {
+            child.mount_subtree(world)
+        }
+        self.ready()
+        self.synchronize(world, entity)
+    }
+
+    module func process_subtree(delta:float, world:&ECS.World) {
+        if !self.current_inside_tree {
+            panic("Node '$(self.path())' is outside the SceneTree")
+        }
+        self.process(delta)
+        let entity = self.current_entity!
+        self.synchronize(world, entity)
+        var children = self.current_children
+        for var child in children {
+            child.process_subtree(delta, world)
+        }
+    }
+
+    module func unmount_subtree(world:&ECS.World) {
+        if !self.current_inside_tree { return }
+        var children = self.current_children
+        for var child in children {
+            child.unmount_subtree(world)
+        }
+        self.exit_tree()
+        world.destroy(self.current_entity!)
+        self.current_entity = null
+    }
+
+    module func print_branch(indent:str) {
+        print("$(indent)$(self.name()) [$(reflect(self).type)]")
+        for child in self.current_children {
+            child.print_branch("$(indent)  ")
+        }
+    }
+
+    private func has_child_named(name:str) bool {
+        for child in self.current_children {
+            if child.name() == name { return true }
+        }
+        return false
+    }
+
+    private func is_below(candidate:Node) bool {
+        var ancestor = self.current_parent
+        while var current = ancestor {
+            if current == candidate { return true }
+            ancestor = current.current_parent
+        }
+        return false
+    }
+}

@@ -1,0 +1,7 @@
+{
+  "sources": "Tests",
+  "dependencies": {
+    "GFX": "^0.40.0",
+    "GFX.Nodes": "^0.1.0"
+  }
+}

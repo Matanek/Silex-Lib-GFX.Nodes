@@ -1,0 +1,85 @@
+# GFX.Nodes
+
+`GFX.Nodes` propose un arbre de scène orienté objet sans remplacer l’ECS de
+GFX. Chaque nœud monté possède une entité ECS ; les scènes 2D et 3D continuent
+de posséder leurs composants et leurs renderers.
+
+## Principe
+
+Chaque classe de nœud représente une fonctionnalité :
+
+- `Node` possède un nom, un parent, des enfants et un cycle de vie ;
+- `Node2D` ajoute un `GFX.Scene2D.Transform` local ;
+- `Node3D` ajoute un `GFX.Scene3D.Transform` local ;
+- `Canvas2D` ajoute un dessin vectoriel `GFX.Canvas` rendu par Scene2D.
+
+Le `Node` générique ne connaît aucune dimension et ne transporte aucun
+transform. Un nœud spatial compose son transform avec celui de son parent
+immédiat lorsque celui-ci appartient au même domaine. Un `Node` générique entre
+deux nœuds spatiaux démarre donc naturellement une nouvelle racine spatiale.
+
+## Utilisation
+
+```silex
+use GFX.Application
+use GFX.Canvas
+use GFX.Color
+use GFX.Nodes
+use GFX.Plugins
+use STD.Math
+
+class Body:Nodes.Canvas2D {
+    init():super("Body") {
+        self.paint(func(painter:&Canvas.Painter) {
+            painter.fill(
+                Canvas.Circle(Math.Vec2(), 12.0),
+                Canvas.Fill.solid(Color.cyan_400())
+            )
+        })
+    }
+
+    override func on_ready() {
+        print("ready $(self.path())")
+    }
+}
+
+func main() {
+    var player = Nodes.Node2D("Player", Math.Vec2(40.0, 20.0))
+    player.add_child(Body())
+
+    var root = Nodes.Node("Level")
+    root.add_child(player)
+
+    Application()
+        ..add_plugin(Plugins.Window())
+        ..add_plugin(Plugins.Rendering())
+        ..add_plugin(Plugins.Scene2D())
+        ..add_plugin(Plugins.Nodes(root))
+        ..run()
+}
+```
+
+`Plugins.Nodes` installe l’intégration Application, le monde ECS et le temps.
+Le renderer reste un choix explicite : ajouter `Plugins.Scene2D()` pour les
+nœuds 2D, `Plugins.Scene3D()` pour les nœuds 3D, ou les deux.
+
+## Cycle de vie
+
+Une classe spécialisée redéfinit `on_ready`, `on_process` ou `on_exit_tree`.
+Les vrais appels de cycle de vie restent privés, de sorte qu’un oubli de
+`super` ne puisse pas casser la bookkeeping interne ni la chaîne d’appel.
+
+```silex
+class Player:Nodes.Node2D {
+    override func on_process(delta:float) {
+        self.position = Math.Vec2(
+            self.position.x + 80.0 * delta,
+            self.position.y
+        )
+    }
+}
+```
+
+La première base privilégie les arbres construits avant le démarrage. L’ajout
+et le retrait d’enfants pendant que l’arbre est monté ne sont pas encore pris
+en charge.

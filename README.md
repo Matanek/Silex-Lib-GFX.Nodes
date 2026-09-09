@@ -1,0 +1,20 @@
+# GFX.Nodes
+
+`GFX.Nodes` provides an object-oriented scene tree for Silex applications while
+keeping GFX.Application, GFX.ECS, GFX.Scene2D, and GFX.Scene3D as the runtime
+owners of scheduling, entities, and scene components.
+
+```text
+silex install GFX.Nodes
+```
+
+The generic `Node` owns tree structure and lifecycle only. `Node2D` and
+`Node3D` add their respective scene transforms, and `Canvas2D` owns vector
+drawing commands backed by `GFX.Canvas`.
+
+## Documentation
+
+- [French documentation](Docs/FR/README.md)
+- [English documentation](Docs/EN/README.md)
+
+The package requires Silex 0.44.0 or newer.

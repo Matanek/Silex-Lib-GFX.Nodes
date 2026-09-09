@@ -1,0 +1,19 @@
+use GFX.Nodes
+use GFX.Plugins
+
+class Player:Nodes.Node2D {}
+
+test "consume Nodes directly and through the GFX plugin catalog" {
+    var player:Nodes.Node = Player()
+    var root = Nodes.Node("Level")
+    root.add_child(player)
+    let plugin = Plugins.Nodes(root)
+    let identity = reflect(root.child(0))
+
+    assert(plugin.id() == "GFX.Nodes.Plugin")
+    assert(identity.type == "Player")
+    assert(identity.types.count() == 3)
+    assert(identity.types[0] == "GFX.Nodes.Node")
+    assert(identity.types[1] == "GFX.Nodes.Node2D")
+    assert(identity.types[2] == "Player")
+}
