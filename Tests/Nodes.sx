@@ -23,6 +23,36 @@ class Actor2D:Nodes.Node2D {
     override func on_exit_tree() { self.exit_calls++ }
 }
 
+class ObservedNode2D:Nodes.Node2D {
+    var synchronize_calls:int
+
+    init(name:str = "ObservedNode2D"):super(name) {
+        self.synchronize_calls = 0
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        self.synchronize_calls++
+        super.synchronize(world, entity)
+    }
+}
+
+class CoalescedNode2D:Nodes.Node2D {
+    var synchronize_calls:int
+
+    init():super("CoalescedNode2D") { self.synchronize_calls = 0 }
+
+    override func on_process(delta:float) {
+        self.position = Math.Vec2(4.0, 5.0)
+        self.rotation = 0.5
+        self.scale = Math.Vec2(2.0)
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        self.synchronize_calls++
+        super.synchronize(world, entity)
+    }
+}
+
 test "mount object nodes as ECS entities and preserve dimensional ownership" {
     var actor = Actor2D()
     var drawing = Nodes.Canvas2D("Drawing")
@@ -169,6 +199,97 @@ test "mount and synchronize camera and sprite nodes" {
     assert(updated_camera_3d.order == 8)
     assert(!updated_sprite_3d.visible)
     assert(updated_sprite_3d.billboard == Scene3D.Billboard.face_camera_y)
+
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "process only active authored nodes without duplicate registration" {
+    var actor = Actor2D()
+    actor.set_process(false)
+    var root = Nodes.Node("Root")
+    root.add_child(actor)
+
+    var application = Application()
+        ..add_plugin(Nodes.Plugin(root))
+    application.prepare()
+    application.run_schedule(Application.Schedule.startup)
+
+    application.run_schedule(Application.Schedule.update)
+    assert(actor.process_calls == 0)
+
+    actor.set_process(true)
+    application.run_schedule(Application.Schedule.update)
+    assert(actor.process_calls == 1)
+
+    actor.set_process(false)
+    application.run_schedule(Application.Schedule.update)
+    assert(actor.process_calls == 1)
+
+    actor.set_process(true)
+    application.run_schedule(Application.Schedule.update)
+    assert(actor.process_calls == 2)
+
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "synchronize only dirty transforms and propagate parents before children" {
+    var parent = ObservedNode2D("Parent")
+    var child = ObservedNode2D("Child")
+    parent.add_child(child)
+    var root = Nodes.Node("Root")
+    root.add_child(parent)
+
+    var application = Application()
+        ..add_plugin(Nodes.Plugin(root))
+    application.prepare()
+    application.run_schedule(Application.Schedule.startup)
+
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    let child_entity:ECS.Entity = child.entity()!
+
+    application.run_schedule(Application.Schedule.update)
+    assert(parent.synchronize_calls == 0)
+    assert(child.synchronize_calls == 0)
+
+    child.position = Math.Vec2(2.0, 3.0)
+    child.rotation = 0.25
+    child.scale = Math.Vec2(2.0)
+    parent.position = Math.Vec2(10.0, 20.0)
+    application.run_schedule(Application.Schedule.update)
+
+    assert(parent.synchronize_calls == 1)
+    assert(child.synchronize_calls == 1)
+    assert(world.get<Scene2D.Transform>(child_entity).position ==
+        Math.Vec2(12.0, 23.0))
+
+    child.position = Math.Vec2(2.0, 3.0)
+    application.run_schedule(Application.Schedule.update)
+    assert(parent.synchronize_calls == 1)
+    assert(child.synchronize_calls == 1)
+
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "coalesce transform properties changed by one process callback" {
+    var moving = CoalescedNode2D()
+    var root = Nodes.Node("Root")
+    root.add_child(moving)
+
+    var application = Application()
+        ..add_plugin(Nodes.Plugin(root))
+    application.prepare()
+    application.run_schedule(Application.Schedule.startup)
+    application.run_schedule(Application.Schedule.update)
+
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    let moving_entity:ECS.Entity = moving.entity()!
+    let transform = world.get<Scene2D.Transform>(moving_entity)
+    assert(moving.synchronize_calls == 1)
+    assert(transform.position == Math.Vec2(4.0, 5.0))
+    assert(transform.rotation == 0.5)
+    assert(transform.scale == Math.Vec2(2.0))
 
     application.run_schedule(Application.Schedule.shutdown)
 }

@@ -1,4 +1,5 @@
 use GFX.ECS
+use STD.Text
 
 // Dimension-independent scene-tree identity and lifecycle.
 
@@ -7,7 +8,14 @@ public class Node {
     private var current_parent:Node? = null
     private var current_children:Node[]
     private var current_entity:ECS.Entity? = null
+    private var current_tree:SceneTree? = null
     private var current_inside_tree:bool
+    private var current_dirty:bool
+    private var current_synchronization_registered:bool
+    private var current_process_enabled:bool
+    private var current_process_configured:bool
+    private var current_process_registered:bool
+    private var current_processing:bool
     private var current_ready_count:int
     private var current_process_delta:float
 
@@ -15,6 +23,12 @@ public class Node {
         self.current_name = name
         self.current_children = []
         self.current_inside_tree = false
+        self.current_dirty = false
+        self.current_synchronization_registered = false
+        self.current_process_enabled = false
+        self.current_process_configured = false
+        self.current_process_registered = false
+        self.current_processing = false
         self.current_ready_count = 0
         self.current_process_delta = 0.0
     }
@@ -28,6 +42,17 @@ public class Node {
     func is_inside_tree() bool { return self.current_inside_tree }
     func ready_count() int { return self.current_ready_count }
     func process_delta() float { return self.current_process_delta }
+    func is_processing() bool { return self.current_process_enabled }
+
+    func set_process(enabled:bool) {
+        self.current_process_configured = true
+        if self.current_process_enabled == enabled { return }
+        self.current_process_enabled = enabled
+        if enabled && self.current_inside_tree && !self.current_process_registered {
+            self.current_tree!.register_process(self)
+            self.current_process_registered = true
+        }
+    }
 
     func path() str {
         if var parent = self.current_parent {
@@ -80,6 +105,51 @@ public class Node {
 
     protected func synchronize(world:&ECS.World, entity:ECS.Entity) {}
 
+    protected func changed() {
+        self.mark_changed()
+        if self.current_inside_tree && !self.current_processing &&
+            !self.current_synchronization_registered
+        {
+            self.current_tree!.register_synchronization(self)
+            self.current_synchronization_registered = true
+        }
+    }
+
+    protected func mark_changed() { self.current_dirty = true }
+
+    protected func changes_are_deferred() bool { return self.current_processing }
+
+    protected func invalidate_children_2d(deferred:bool) {
+        for child in self.current_children {
+            child.parent_transform_2d_changed(deferred)
+        }
+    }
+
+    protected func invalidate_children_3d(deferred:bool) {
+        for child in self.current_children {
+            child.parent_transform_3d_changed(deferred)
+        }
+    }
+
+    protected func flush_children_2d(world:&ECS.World) {
+        var children = self.current_children
+        for var child in children {
+            child.flush_parent_transform_2d(world)
+        }
+    }
+
+    protected func flush_children_3d(world:&ECS.World) {
+        var children = self.current_children
+        for var child in children {
+            child.flush_parent_transform_3d(world)
+        }
+    }
+
+    protected func parent_transform_2d_changed(deferred:bool) {}
+    protected func parent_transform_3d_changed(deferred:bool) {}
+    protected func flush_parent_transform_2d(world:&ECS.World) {}
+    protected func flush_parent_transform_3d(world:&ECS.World) {}
+
     private func ready() {
         self.current_ready_count++
         self.on_ready()
@@ -99,34 +169,55 @@ public class Node {
     protected func on_process(delta:float) {}
     protected func on_exit_tree() {}
 
-    module func mount_subtree(world:&ECS.World) {
+    module func mount_subtree(world:&ECS.World, tree:SceneTree) {
         if self.current_inside_tree {
             panic("Node '$(self.path())' is already inside a SceneTree")
         }
         let entity = world.spawn(ECS.EntityRecipe())
+        self.current_tree = tree
         self.current_inside_tree = true
+        self.current_dirty = false
+        self.current_synchronization_registered = false
+        if !self.current_process_configured {
+            self.current_process_enabled = !Text.starts_with(
+                reflect(self).type,
+                "GFX.Nodes."
+            )
+        }
+        if self.current_process_enabled {
+            tree.register_process(self)
+            self.current_process_registered = true
+        }
         self.mount_components(world, entity)
-        self.synchronize(world, entity)
 
         var children = self.current_children
         for var child in children {
-            child.mount_subtree(world)
+            child.mount_subtree(world, tree)
         }
         self.ready()
-        self.synchronize(world, entity)
+        self.flush_synchronization(world)
     }
 
-    module func process_subtree(delta:float, world:&ECS.World) {
+    module func process_frame(delta:float, world:&ECS.World) {
         if !self.current_inside_tree {
             panic("Node '$(self.path())' is outside the SceneTree")
         }
+        if !self.current_process_enabled { return }
+        self.current_processing = true
         self.process(delta)
-        let entity = self.current_entity!
-        self.synchronize(world, entity)
-        var children = self.current_children
-        for var child in children {
-            child.process_subtree(delta, world)
+        self.current_processing = false
+        if self.current_dirty {
+            self.current_dirty = false
+            self.current_synchronization_registered = false
+            self.synchronize(world, self.current_entity!)
         }
+    }
+
+    module func flush_synchronization(world:&ECS.World) {
+        if !self.current_dirty { return }
+        self.current_dirty = false
+        self.current_synchronization_registered = false
+        self.synchronize(world, self.current_entity!)
     }
 
     module func unmount_subtree(world:&ECS.World) {
@@ -138,6 +229,11 @@ public class Node {
         self.exit_tree()
         world.destroy(self.current_entity!)
         self.current_entity = null
+        self.current_tree = null
+        self.current_dirty = false
+        self.current_synchronization_registered = false
+        self.current_process_registered = false
+        self.current_processing = false
     }
 
     module func print_branch(indent:str) {

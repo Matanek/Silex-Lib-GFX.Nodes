@@ -4,25 +4,42 @@ use STD.Math
 
 public class Camera2D:Node2D {
     private var current_camera:Scene2D.Camera
+    private var camera_dirty:bool
 
     var active:bool {
         get { return self.current_camera.active }
-        set(value) { self.current_camera.active = value }
+        set(value) {
+            if self.current_camera.active == value { return }
+            self.current_camera.active = value
+            self.camera_changed()
+        }
     }
 
     var zoom:float {
         get { return self.current_camera.zoom }
-        set(value) { self.current_camera.zoom = value }
+        set(value) {
+            if self.current_camera.zoom == value { return }
+            self.current_camera.zoom = value
+            self.camera_changed()
+        }
     }
 
     var viewport_size:Math.Vec2 {
         get { return self.current_camera.viewport_size }
-        set(value) { self.current_camera.viewport_size = value }
+        set(value) {
+            if self.current_camera.viewport_size == value { return }
+            self.current_camera.viewport_size = value
+            self.camera_changed()
+        }
     }
 
     var order:int {
         get { return self.current_camera.order }
-        set(value) { self.current_camera.order = value }
+        set(value) {
+            if self.current_camera.order == value { return }
+            self.current_camera.order = value
+            self.camera_changed()
+        }
     }
 
     init(
@@ -38,25 +55,25 @@ public class Camera2D:Node2D {
             viewport_size:viewport_size,
             order:order
         )
+        self.camera_dirty = false
     }
 
     override func mount_components(world:&ECS.World, entity:ECS.Entity) {
         super.mount_components(world, entity)
         world.insert(entity, self.current_camera)
+        self.camera_dirty = false
     }
 
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {
         super.synchronize(world, entity)
-        if camera2d_changed(world, entity, self.current_camera) {
-            world.insert(entity, self.current_camera)
-        }
+        if !self.camera_dirty { return }
+        world.insert(entity, self.current_camera)
+        self.camera_dirty = false
     }
-}
 
-local func camera2d_changed(
-    world:@ECS.World,
-    entity:ECS.Entity,
-    expected:Scene2D.Camera
-) bool {
-    return expected != world.get<Scene2D.Camera>(entity)
+    private func camera_changed() {
+        if self.camera_dirty { return }
+        self.camera_dirty = true
+        self.changed()
+    }
 }

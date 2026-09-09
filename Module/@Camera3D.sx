@@ -3,30 +3,51 @@ use GFX.Scene3D
 
 public class Camera3D:Node3D {
     private var current_camera:Scene3D.Camera
+    private var camera_dirty:bool
 
     var active:bool {
         get { return self.current_camera.active }
-        set(value) { self.current_camera.active = value }
+        set(value) {
+            if self.current_camera.active == value { return }
+            self.current_camera.active = value
+            self.camera_changed()
+        }
     }
 
     var vertical_fov:float {
         get { return self.current_camera.vertical_fov }
-        set(value) { self.current_camera.vertical_fov = value }
+        set(value) {
+            if self.current_camera.vertical_fov == value { return }
+            self.current_camera.vertical_fov = value
+            self.camera_changed()
+        }
     }
 
     var near_plane:float {
         get { return self.current_camera.near_plane }
-        set(value) { self.current_camera.near_plane = value }
+        set(value) {
+            if self.current_camera.near_plane == value { return }
+            self.current_camera.near_plane = value
+            self.camera_changed()
+        }
     }
 
     var far_plane:float {
         get { return self.current_camera.far_plane }
-        set(value) { self.current_camera.far_plane = value }
+        set(value) {
+            if self.current_camera.far_plane == value { return }
+            self.current_camera.far_plane = value
+            self.camera_changed()
+        }
     }
 
     var order:int {
         get { return self.current_camera.order }
-        set(value) { self.current_camera.order = value }
+        set(value) {
+            if self.current_camera.order == value { return }
+            self.current_camera.order = value
+            self.camera_changed()
+        }
     }
 
     init(
@@ -44,14 +65,18 @@ public class Camera3D:Node3D {
             far_plane:far_plane,
             order:order
         )
+        self.camera_dirty = false
     }
 
     func use_perspective() {
+        if !self.current_camera.is_orthographic() { return }
         self.current_camera.use_perspective()
+        self.camera_changed()
     }
 
     func use_orthographic(height:float) {
         self.current_camera.use_orthographic(height)
+        self.camera_changed()
     }
 
     func is_orthographic() bool {
@@ -61,20 +86,19 @@ public class Camera3D:Node3D {
     override func mount_components(world:&ECS.World, entity:ECS.Entity) {
         super.mount_components(world, entity)
         world.insert(entity, self.current_camera)
+        self.camera_dirty = false
     }
 
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {
         super.synchronize(world, entity)
-        if camera3d_changed(world, entity, self.current_camera) {
-            world.insert(entity, self.current_camera)
-        }
+        if !self.camera_dirty { return }
+        world.insert(entity, self.current_camera)
+        self.camera_dirty = false
     }
-}
 
-local func camera3d_changed(
-    world:@ECS.World,
-    entity:ECS.Entity,
-    expected:Scene3D.Camera
-) bool {
-    return expected != world.get<Scene3D.Camera>(entity)
+    private func camera_changed() {
+        if self.camera_dirty { return }
+        self.camera_dirty = true
+        self.changed()
+    }
 }

@@ -4,11 +4,15 @@ public class SceneTree {
     private var current_root:Node
     private var current_running:bool
     private var current_frame:int
+    private var current_process_nodes:Node[]
+    private var current_dirty_nodes:Node[]
 
     init(root:Node) {
         self.current_root = root
         self.current_running = false
         self.current_frame = 0
+        self.current_process_nodes = []
+        self.current_dirty_nodes = []
     }
 
     func root() Node { return self.current_root }
@@ -17,7 +21,9 @@ public class SceneTree {
 
     module func start(world:&ECS.World) {
         if self.current_running { panic("SceneTree is already running") }
-        self.current_root.mount_subtree(world)
+        self.current_process_nodes.clear()
+        self.current_dirty_nodes.clear()
+        self.current_root.mount_subtree(world, self)
         self.current_running = true
     }
 
@@ -25,17 +31,44 @@ public class SceneTree {
         if !self.current_running {
             panic("SceneTree must be started before processing")
         }
-        self.current_root.process_subtree(delta, world)
+        let node_count = self.current_process_nodes.count()
+        var index = 0
+        while index < node_count {
+            var node = self.current_process_nodes[index]
+            if node.is_inside_tree() && node.is_processing() {
+                node.process_frame(delta, world)
+            }
+            index++
+        }
+        self.flush_synchronizations(world)
         self.current_frame++
     }
 
     module func stop(world:&ECS.World) {
         if !self.current_running { return }
         self.current_root.unmount_subtree(world)
+        self.current_process_nodes.clear()
+        self.current_dirty_nodes.clear()
         self.current_running = false
+    }
+
+    module func register_process(node:Node) {
+        self.current_process_nodes.append(node)
+    }
+
+    module func register_synchronization(node:Node) {
+        self.current_dirty_nodes.append(node)
     }
 
     func print_tree() {
         self.current_root.print_branch("")
+    }
+
+    private func flush_synchronizations(world:&ECS.World) {
+        var pending = self.current_dirty_nodes
+        self.current_dirty_nodes = []
+        for var node in pending {
+            node.flush_synchronization(world)
+        }
     }
 }

@@ -4,20 +4,33 @@ use STD.Math
 
 public class Node3D:Node {
     private var local_transform:Scene3D.Transform
+    private var transform_dirty:bool
 
     var position:Math.Vec3 {
         get { return self.local_transform.position }
-        set(value) { self.local_transform.position = value }
+        set(value) {
+            if self.local_transform.position == value { return }
+            self.local_transform.position = value
+            self.transform_changed()
+        }
     }
 
     var rotation:Math.Quat {
         get { return self.local_transform.rotation }
-        set(value) { self.local_transform.rotation = value }
+        set(value) {
+            if self.local_transform.rotation == value { return }
+            self.local_transform.rotation = value
+            self.transform_changed()
+        }
     }
 
     var scale:Math.Vec3 {
         get { return self.local_transform.scale }
-        set(value) { self.local_transform.scale = value }
+        set(value) {
+            if self.local_transform.scale == value { return }
+            self.local_transform.scale = value
+            self.transform_changed()
+        }
     }
 
     init(
@@ -31,17 +44,50 @@ public class Node3D:Node {
             rotation:rotation,
             scale:scale
         )
+        self.transform_dirty = false
     }
 
     func transform() Scene3D.Transform { return self.local_transform }
 
     override func mount_components(world:&ECS.World, entity:ECS.Entity) {
         super.mount_components(world, entity)
-        world.insert(entity, self.local_transform)
+        world.insert(entity, self.global_transform(world))
+        self.transform_dirty = false
     }
 
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {
         super.synchronize(world, entity)
+        if !self.transform_dirty { return }
+        if var parent = self.parent() { parent.flush_synchronization(world) }
+        world.insert(entity, self.global_transform(world))
+        self.transform_dirty = false
+        if self.child_count() > 0 { self.flush_children_3d(world) }
+    }
+
+    override func parent_transform_3d_changed(deferred:bool) {
+        if self.transform_dirty { return }
+        self.transform_dirty = true
+        self.mark_changed()
+        if deferred {
+            self.invalidate_children_3d(true)
+            return
+        }
+        self.changed()
+        self.invalidate_children_3d(false)
+    }
+
+    override func flush_parent_transform_3d(world:&ECS.World) {
+        self.flush_synchronization(world)
+    }
+
+    private func transform_changed() {
+        if self.transform_dirty { return }
+        self.transform_dirty = true
+        self.changed()
+        self.invalidate_children_3d(self.changes_are_deferred())
+    }
+
+    private func global_transform(world:@ECS.World) Scene3D.Transform {
         var global = self.local_transform
         if var parent = self.parent() {
             let candidate:ECS.Entity? = parent.entity()
@@ -55,18 +101,8 @@ public class Node3D:Node {
                 }
             }
         }
-        if transform_changed(world, entity, global) {
-            world.insert(entity, global)
-        }
+        return global
     }
-}
-
-func transform_changed(
-    world:@ECS.World,
-    entity:ECS.Entity,
-    expected:Scene3D.Transform
-) bool {
-    return expected != world.get<Scene3D.Transform>(entity)
 }
 
 func compose_transform(

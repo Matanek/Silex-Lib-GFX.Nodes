@@ -6,35 +6,60 @@ use STD.Math
 
 public class Sprite3D:Node3D {
     private var current_sprite:Scene3D.Sprite
+    private var sprite_dirty:bool
 
     var image:Image.Handle {
         get { return self.current_sprite.image }
-        set(value) { self.current_sprite.image = value }
+        set(value) {
+            if self.current_sprite.image == value { return }
+            self.current_sprite.image = value
+            self.sprite_changed()
+        }
     }
 
     var size:Math.Vec2 {
         get { return self.current_sprite.size }
-        set(value) { self.current_sprite.size = value }
+        set(value) {
+            if self.current_sprite.size == value { return }
+            self.current_sprite.size = value
+            self.sprite_changed()
+        }
     }
 
     var pivot:Math.Vec2 {
         get { return self.current_sprite.pivot }
-        set(value) { self.current_sprite.pivot = value }
+        set(value) {
+            if self.current_sprite.pivot == value { return }
+            self.current_sprite.pivot = value
+            self.sprite_changed()
+        }
     }
 
     var color:Color {
         get { return self.current_sprite.color }
-        set(value) { self.current_sprite.color = value }
+        set(value) {
+            if self.current_sprite.color == value { return }
+            self.current_sprite.color = value
+            self.sprite_changed()
+        }
     }
 
     var billboard:Scene3D.Billboard {
         get { return self.current_sprite.billboard }
-        set(value) { self.current_sprite.billboard = value }
+        set(value) {
+            if self.current_sprite.billboard == value { return }
+            self.current_sprite.billboard = value
+            self.sprite_changed()
+        }
     }
 
     var visible:bool {
         get { return self.current_sprite.visible }
-        set(value) { self.current_sprite.visible = value }
+        set(value) {
+            if self.current_sprite.visible == value { return }
+            self.current_sprite.visible = value
+            self.sprite_changed()
+        }
     }
 
     init(
@@ -54,30 +79,37 @@ public class Sprite3D:Node3D {
             billboard:billboard,
             visible:visible
         )
+        self.sprite_dirty = false
     }
 
     func region() Image.Region? { return self.current_sprite.region() }
-    func region(value:Image.Region) { self.current_sprite.region(value) }
+    func region(value:Image.Region) {
+        self.current_sprite.region(value)
+        self.sprite_changed()
+    }
     func sampling() Scene3D.Sampling { return self.current_sprite.sampling() }
-    func sampling(value:Scene3D.Sampling) { self.current_sprite.sampling(value) }
+    func sampling(value:Scene3D.Sampling) {
+        if self.current_sprite.sampling() == value { return }
+        self.current_sprite.sampling(value)
+        self.sprite_changed()
+    }
 
     override func mount_components(world:&ECS.World, entity:ECS.Entity) {
         super.mount_components(world, entity)
         world.insert(entity, self.current_sprite)
+        self.sprite_dirty = false
     }
 
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {
         super.synchronize(world, entity)
-        if sprite3d_changed(world, entity, self.current_sprite) {
-            world.insert(entity, self.current_sprite)
-        }
+        if !self.sprite_dirty { return }
+        world.insert(entity, self.current_sprite)
+        self.sprite_dirty = false
     }
-}
 
-local func sprite3d_changed(
-    world:@ECS.World,
-    entity:ECS.Entity,
-    expected:Scene3D.Sprite
-) bool {
-    return expected != world.get<Scene3D.Sprite>(entity)
+    private func sprite_changed() {
+        if self.sprite_dirty { return }
+        self.sprite_dirty = true
+        self.changed()
+    }
 }

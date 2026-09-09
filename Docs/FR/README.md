@@ -84,7 +84,8 @@ camera.zoom = 3.0
 ```
 
 `Camera2D : Node2D`, `Sprite2D : Node2D`, `Camera3D : Node3D` et
-`Sprite3D : Node3D`. À chaque cycle, leurs propriétés sont synchronisées vers
+`Sprite3D : Node3D`. Lorsque leurs propriétés changent, elles sont
+synchronisées vers
 `GFX.Scene2D.Camera`, `GFX.Scene2D.Sprite`, `GFX.Scene3D.Camera` et
 `GFX.Scene3D.Sprite`. Scene2D et Scene3D demeurent donc seuls propriétaires du
 rendu.
@@ -105,6 +106,14 @@ class Player:Nodes.Node2D {
     }
 }
 ```
+
+Les Nodes fournis par le package sont statiques par défaut et ne reçoivent
+donc aucun callback par frame. Une classe définie par l’application participe
+automatiquement à `on_process` ; `set_process(false)` permet de la désactiver,
+et `set_process(true)` de la réactiver. Les propriétés modifiées pendant un
+même `on_process` sont regroupées avant leur publication dans l’ECS. Une
+modification effectuée hors callback est publiée au prochain cycle de mise à
+jour. Seuls les transforms descendants réellement affectés sont propagés.
 
 La première base privilégie les arbres construits avant le démarrage. L’ajout
 et le retrait d’enfants pendant que l’arbre est monté ne sont pas encore pris

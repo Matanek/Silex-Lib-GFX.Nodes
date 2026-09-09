@@ -5,15 +5,22 @@ use GFX.Scene2D
 public class Canvas2D:Node2D {
     private var drawing:Canvas.Canvas
     private var current_visible:bool
+    private var visibility_dirty:bool
 
     var visible:bool {
         get { return self.current_visible }
-        set(value) { self.current_visible = value }
+        set(value) {
+            if self.current_visible == value { return }
+            self.current_visible = value
+            self.visibility_dirty = true
+            self.changed()
+        }
     }
 
     init(name:str = "Canvas2D"):super(name) {
         self.drawing = Canvas.Canvas()
         self.current_visible = true
+        self.visibility_dirty = false
     }
 
     func canvas() Canvas.Canvas { return self.drawing }
@@ -30,18 +37,15 @@ public class Canvas2D:Node2D {
         var placement = Scene2D.Canvas(self.drawing)
         placement.visible = self.current_visible
         world.insert(entity, move placement)
+        self.visibility_dirty = false
     }
 
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {
         super.synchronize(world, entity)
-        if canvas_visibility(world, entity) != self.current_visible {
-            var placement = Scene2D.Canvas(self.drawing)
-            placement.visible = self.current_visible
-            world.insert(entity, move placement)
-        }
+        if !self.visibility_dirty { return }
+        var placement = Scene2D.Canvas(self.drawing)
+        placement.visible = self.current_visible
+        world.insert(entity, move placement)
+        self.visibility_dirty = false
     }
-}
-
-func canvas_visibility(world:@ECS.World, entity:ECS.Entity) bool {
-    return world.get<Scene2D.Canvas>(entity).visible
 }
