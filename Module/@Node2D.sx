@@ -5,6 +5,8 @@ use STD.Math
 public class Node2D:Node {
     private var local_transform:Scene2D.Transform
     private var transform_dirty:bool
+    private var spatial_parent:Node? = null
+    private var spatial_parent_entity:ECS.Entity? = null
 
     var position:Math.Vec2 {
         get { return self.local_transform.position }
@@ -51,6 +53,18 @@ public class Node2D:Node {
 
     override func mount_components(world:&ECS.World, entity:ECS.Entity) {
         super.mount_components(world, entity)
+        self.spatial_parent = null
+        self.spatial_parent_entity = null
+        if var parent = self.parent() {
+            let candidate:ECS.Entity? = parent.entity()
+            if candidate != null {
+                let parent_entity:ECS.Entity = candidate!
+                if world.has<Scene2D.Transform>(parent_entity) {
+                    self.spatial_parent = parent
+                    self.spatial_parent_entity = parent_entity
+                }
+            }
+        }
         world.insert(entity, self.global_transform(world))
         self.transform_dirty = false
     }
@@ -58,7 +72,7 @@ public class Node2D:Node {
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {
         super.synchronize(world, entity)
         if !self.transform_dirty { return }
-        if var parent = self.parent() { parent.flush_synchronization(world) }
+        if var parent = self.spatial_parent { parent.flush_synchronization(world) }
         world.insert(entity, self.global_transform(world))
         self.transform_dirty = false
         if self.child_count() > 0 { self.flush_children_2d(world) }
@@ -89,17 +103,11 @@ public class Node2D:Node {
 
     private func global_transform(world:@ECS.World) Scene2D.Transform {
         var global = self.local_transform
-        if var parent = self.parent() {
-            let candidate:ECS.Entity? = parent.entity()
-            if candidate != null {
-                let parent_entity:ECS.Entity = candidate
-                if world.has<Scene2D.Transform>(parent_entity) {
-                    global = compose_transform(
-                        world.get<Scene2D.Transform>(parent_entity),
-                        self.local_transform
-                    )
-                }
-            }
+        if let parent_entity = self.spatial_parent_entity {
+            global = compose_transform(
+                world.get<Scene2D.Transform>(parent_entity),
+                self.local_transform
+            )
         }
         return global
     }

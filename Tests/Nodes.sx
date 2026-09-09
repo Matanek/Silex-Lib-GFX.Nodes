@@ -36,6 +36,19 @@ class ObservedNode2D:Nodes.Node2D {
     }
 }
 
+class ObservedNode3D:Nodes.Node3D {
+    var synchronize_calls:int
+
+    init(name:str = "ObservedNode3D"):super(name) {
+        self.synchronize_calls = 0
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        self.synchronize_calls++
+        super.synchronize(world, entity)
+    }
+}
+
 class CoalescedNode2D:Nodes.Node2D {
     var synchronize_calls:int
 
@@ -236,8 +249,12 @@ test "synchronize only dirty transforms and propagate parents before children" {
     var parent = ObservedNode2D("Parent")
     var child = ObservedNode2D("Child")
     parent.add_child(child)
+    var parent_3d = ObservedNode3D("Parent3D")
+    var child_3d = ObservedNode3D("Child3D")
+    parent_3d.add_child(child_3d)
     var root = Nodes.Node("Root")
     root.add_child(parent)
+    root.add_child(parent_3d)
 
     var application = Application()
         ..add_plugin(Nodes.Plugin(root))
@@ -247,26 +264,37 @@ test "synchronize only dirty transforms and propagate parents before children" {
     var resources = application.resources()
     var world:@ECS.World = resources.get<ECS.World>()
     let child_entity:ECS.Entity = child.entity()!
+    let child_3d_entity:ECS.Entity = child_3d.entity()!
 
     application.run_schedule(Application.Schedule.update)
     assert(parent.synchronize_calls == 0)
     assert(child.synchronize_calls == 0)
+    assert(parent_3d.synchronize_calls == 0)
+    assert(child_3d.synchronize_calls == 0)
 
     child.position = Math.Vec2(2.0, 3.0)
     child.rotation = 0.25
     child.scale = Math.Vec2(2.0)
     parent.position = Math.Vec2(10.0, 20.0)
+    child_3d.position = Math.Vec3(2.0, 3.0, 4.0)
+    parent_3d.position = Math.Vec3(10.0, 20.0, 30.0)
     application.run_schedule(Application.Schedule.update)
 
     assert(parent.synchronize_calls == 1)
     assert(child.synchronize_calls == 1)
+    assert(parent_3d.synchronize_calls == 1)
+    assert(child_3d.synchronize_calls == 1)
     assert(world.get<Scene2D.Transform>(child_entity).position ==
         Math.Vec2(12.0, 23.0))
+    assert(world.get<Scene3D.Transform>(child_3d_entity).position ==
+        Math.Vec3(12.0, 23.0, 34.0))
 
     child.position = Math.Vec2(2.0, 3.0)
     application.run_schedule(Application.Schedule.update)
     assert(parent.synchronize_calls == 1)
     assert(child.synchronize_calls == 1)
+    assert(parent_3d.synchronize_calls == 1)
+    assert(child_3d.synchronize_calls == 1)
 
     application.run_schedule(Application.Schedule.shutdown)
 }
