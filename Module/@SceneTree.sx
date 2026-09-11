@@ -1,9 +1,8 @@
 use GFX.ECS
-use GFX.Application
 use GFX.Input
 
 public class SceneTree {
-    private var current_resources:Application.Resources? = null
+    private var current_input:Input.State? = null
     private var current_root:Node
     private var current_running:bool
     private var current_frame:int
@@ -24,8 +23,10 @@ public class SceneTree {
     func is_running() bool { return self.current_running }
     func frame() int { return self.current_frame }
 
-    module func bind_resources(resources:Application.Resources) {
-        self.current_resources = resources
+    // Retain only the shared input state, never the application's resource
+    // store: that back-reference makes each cycle check trace the whole scene.
+    module func bind_input(input:Input.State?) {
+        self.current_input = input
     }
 
     module func start(world:&ECS.World) {
@@ -69,16 +70,14 @@ public class SceneTree {
         self.current_dirty_nodes.clear()
         self.pending_attachments.clear()
         self.pending_detachments.clear()
+        self.current_input = null
     }
 
     module func input() @Input.State {
-        if self.current_resources == null {
-            panic("Node input is only available while its SceneTree is mounted")
-        }
-        if !self.current_resources!.has<Input.State>() {
+        if self.current_input == null {
             panic("Node input requires Plugins.Input or Plugins.Window before Plugins.Nodes")
         }
-        return self.current_resources!.get<Input.State>()
+        return self.current_input!
     }
 
     module func register_attachment(node:Node) {

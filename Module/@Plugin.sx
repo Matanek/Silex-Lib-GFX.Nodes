@@ -1,5 +1,6 @@
 use GFX.Application
 use GFX.ECS
+use GFX.Input
 
 public struct Plugin:Application.Plugin {
     private var root_node:Node
@@ -13,13 +14,22 @@ public struct Plugin:Application.Plugin {
     func build(application:&Application) {
         application.add_plugin(ECS.Plugin())
         application.add_plugin(Application.Time())
-        var tree = SceneTree(self.root_node)
-        tree.bind_resources(application.resources())
-        application.add_resource(tree)
+        application.add_resource(SceneTree(self.root_node))
+        application.add_system(Application.Schedule.startup, bind_node_input)
         application.add_system(Application.Schedule.startup, start_nodes)
         application.add_system(Application.Schedule.update, update_nodes)
         application.add_system(Application.Schedule.shutdown, stop_nodes)
     }
+}
+
+func bind_node_input(application:Application) {
+    var resources = application.resources()
+    var input:Input.State? = null
+    {
+        if let state = resources.try_get<Input.State>() { input = state }
+    }
+    var tree = resources.get_mut<SceneTree>()
+    tree.bind_input(input)
 }
 
 func start_nodes(tree:&SceneTree, world:&ECS.World) {
