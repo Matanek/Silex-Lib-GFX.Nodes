@@ -113,6 +113,65 @@ callback are coalesced before publication to ECS. A change made outside a
 callback is published on the next update cycle. Only affected descendant
 transforms are propagated.
 
+## Pause game nodes
+
+The `process_mode` property uses `Application.ProcessMode`. By default,
+`inherit` takes the parent's effective mode; a root uses `pausable`.
+Pausing `Application.Simulation` therefore suspends game `on_process` callbacks
+while preserving entities and their rendering.
+
+In this complete example, Escape pauses the player and can resume it:
+
+```sx
+use GFX.Application
+use GFX.Input
+use GFX.Nodes
+use GFX.Plugins
+
+class Player:Nodes.Node {
+    override func on_process(delta:float) {
+        // Advance gameplay here.
+    }
+}
+
+class Root:Nodes.Node {
+    override func on_ready() {
+        self.process_mode = Application.ProcessMode.always
+        self.add_child(Player()..process_mode = Application.ProcessMode.pausable)
+    }
+
+    override func on_process(delta:float) {
+        let toggle = self.input().is_pressed(Input.Key.escape)
+        if toggle {
+            var resources = self.resources()
+            var simulation = resources.get_mut<Application.Simulation>()
+            if simulation.is_paused() { simulation.resume() }
+            else { simulation.pause() }
+        }
+    }
+}
+
+func main() {
+    Application()
+        ..add_plugin(Plugins.Window())
+        ..add_plugin(Plugins.Nodes(Root()))
+        ..run()
+}
+```
+
+An `always` child continues even under a paused or `disabled` parent.
+`when_paused` suits a menu active only during a pause. An explicit mode becomes
+the value inherited by its descendants; changing the parent or mode updates
+this inheritance. `disabled` suspends recurring callbacks without unmounting
+the subtree or preventing a child from choosing its own mode.
+`set_process(false)` disables only that node's callback, independently of its
+mode. `on_ready` and `on_exit_tree` still execute.
+
+The pause state is read once per callback pass; a change during that pass
+applies to nodes on the next pass. Callbacks that remain active receive the
+real frame delta. Additions, removals and property synchronization continue
+while paused.
+
 ## Change the tree at runtime
 
 `add_child` and `remove_child` work before startup, from `on_ready`,

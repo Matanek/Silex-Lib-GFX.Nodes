@@ -1,0 +1,75 @@
+use GFX.Application
+use GFX.Nodes
+use GFX.Plugins
+
+class Counter:Nodes.Node {
+    var frames:int = 0
+    init(name:str):super(name) {}
+    override func on_process(delta:float) { self.frames++ }
+}
+
+func pause(application:Application) {
+    var resources = application.resources()
+    var simulation = resources.get_mut<Application.Simulation>()
+    simulation.pause()
+}
+
+func resume(application:Application) {
+    var resources = application.resources()
+    var simulation = resources.get_mut<Application.Simulation>()
+    simulation.resume()
+}
+
+test "node pause modes inherit and allow active interface descendants" {
+    var root = Counter("Game")
+    var player = Counter("Player")
+    var hud = Counter("HUD")
+    hud.process_mode = Application.ProcessMode.always
+    var label = Counter("Label")
+    hud.add_child(label)
+    var menu = Counter("Menu")
+    menu.process_mode = Application.ProcessMode.when_paused
+    root.add_child(player)
+    root.add_child(hud)
+    root.add_child(menu)
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    application.run_schedule(Application.Schedule.startup)
+    application.run_schedule(Application.Schedule.update)
+    pause(application)
+    application.run_schedule(Application.Schedule.update)
+    assert(root.frames == 1 && player.frames == 1)
+    assert(hud.frames == 2 && label.frames == 2)
+    assert(menu.frames == 1)
+    resume(application)
+    application.run_schedule(Application.Schedule.update)
+    assert(root.frames == 2 && player.frames == 2)
+    assert(hud.frames == 3 && label.frames == 3)
+    assert(menu.frames == 1)
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(!root.is_inside_tree() && !menu.is_inside_tree())
+}
+
+test "inherited pause policy follows reparenting and mode changes" {
+    var root = Counter("Game")
+    var ui = Counter("UI")
+    ui.process_mode = Application.ProcessMode.always
+    var child = Counter("Child")
+    ui.add_child(child)
+    root.add_child(ui)
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    pause(application)
+    application.run_schedule(Application.Schedule.startup)
+    application.run_schedule(Application.Schedule.update)
+    assert(root.frames == 0 && child.frames == 1)
+    ui.remove_child(child)
+    root.add_child(child)
+    application.run_schedule(Application.Schedule.update)
+    assert(child.frames == 1 && child.ready_count() == 2)
+    root.process_mode = Application.ProcessMode.always
+    application.run_schedule(Application.Schedule.update)
+    assert(root.frames == 1 && child.frames == 2)
+    root.process_mode = Application.ProcessMode.disabled
+    application.run_schedule(Application.Schedule.update)
+    assert(root.frames == 1 && child.frames == 2 && ui.frames == 4)
+    application.run_schedule(Application.Schedule.shutdown)
+}

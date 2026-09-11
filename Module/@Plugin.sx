@@ -18,7 +18,7 @@ public struct Plugin:Application.Plugin {
         application.add_resource(SceneTree(self.root_node))
         application.add_system(Application.Schedule.startup, bind_node_input)
         application.add_system(Application.Schedule.startup, start_nodes)
-        application.add_system(Application.Schedule.update, update_nodes)
+        application.add_system(Application.Schedule.update, update_nodes, process_mode:GFX.Application.ProcessMode.always)
         application.add_system(Application.Schedule.shutdown, stop_nodes)
     }
 }
@@ -51,6 +51,7 @@ func start_nodes(application:Application) {
 
 func update_nodes(application:Application) {
     var resources = application.resources()
+    let paused = resources.get<Application.Simulation>().is_paused()
     var world_resources = application.resources()
     let resources_address = C.object_address(resources)
     var delta = 0.0
@@ -61,7 +62,7 @@ func update_nodes(application:Application) {
     var tree = resources.get_mut<SceneTree>()
     var world = world_resources.get_mut<ECS.World>()
     tree.begin_callbacks(resources_address)
-    tree.process(delta, world)
+    tree.process(delta, paused, world)
     tree.end_callbacks()
 }
 

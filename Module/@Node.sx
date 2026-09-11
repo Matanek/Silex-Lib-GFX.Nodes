@@ -6,6 +6,33 @@ use STD.Text
 // Dimension-independent scene-tree identity and lifecycle.
 
 public class Node {
+    private var current_process_mode:Application.ProcessMode = Application.ProcessMode.inherit
+    private var effective_process_mode:Application.ProcessMode = Application.ProcessMode.pausable
+
+    var process_mode:Application.ProcessMode {
+        get { return self.current_process_mode }
+        set(value) {
+            if self.current_process_mode == value { return }
+            self.current_process_mode = value
+            self.refresh_process_mode()
+        }
+    }
+
+    private func refresh_process_mode() {
+        var mode = self.current_process_mode
+        if mode == Application.ProcessMode.inherit {
+            mode = Application.ProcessMode.pausable
+            if let parent = self.current_parent { mode = parent.effective_process_mode }
+        }
+        if self.effective_process_mode == mode { return }
+        self.effective_process_mode = mode
+        for child in self.current_children { child.refresh_process_mode() }
+    }
+
+    module func processes_while(paused:bool) bool {
+        return Application.should_process(self.effective_process_mode, paused)
+    }
+
     private let current_name:str
     private var current_parent:Node? = null
     private var current_children:Node[]
@@ -86,6 +113,7 @@ public class Node {
             }
         }
         child.current_parent = self
+        child.refresh_process_mode()
         self.current_children.append(child)
         if let tree = self.destination_tree() {
             tree.register_attachment(child)
@@ -99,6 +127,7 @@ public class Node {
             if self.current_children[index] == child {
                 var removed = self.current_children.take(index)
                 removed.current_parent = null
+                removed.refresh_process_mode()
                 if let tree = removed.current_tree {
                     removed.suspend_subtree()
                     tree.register_detachment(removed)

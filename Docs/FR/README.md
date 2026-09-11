@@ -115,6 +115,65 @@ même `on_process` sont regroupées avant leur publication dans l’ECS. Une
 modification effectuée hors callback est publiée au prochain cycle de mise à
 jour. Seuls les transforms descendants réellement affectés sont propagés.
 
+## Suspendre les nœuds du jeu
+
+La propriété `process_mode` utilise `Application.ProcessMode`. Par défaut,
+`inherit` reprend le mode effectif du parent ; une racine utilise `pausable`.
+La pause de `Application.Simulation` suspend donc les `on_process` du jeu tout
+en conservant les entités et leur rendu.
+
+Dans cet exemple complet, Échap suspend le joueur et peut aussi le réactiver :
+
+```sx
+use GFX.Application
+use GFX.Input
+use GFX.Nodes
+use GFX.Plugins
+
+class Player:Nodes.Node {
+    override func on_process(delta:float) {
+        // Faire avancer le jeu ici.
+    }
+}
+
+class Root:Nodes.Node {
+    override func on_ready() {
+        self.process_mode = Application.ProcessMode.always
+        self.add_child(Player()..process_mode = Application.ProcessMode.pausable)
+    }
+
+    override func on_process(delta:float) {
+        let toggle = self.input().is_pressed(Input.Key.escape)
+        if toggle {
+            var resources = self.resources()
+            var simulation = resources.get_mut<Application.Simulation>()
+            if simulation.is_paused() { simulation.resume() }
+            else { simulation.pause() }
+        }
+    }
+}
+
+func main() {
+    Application()
+        ..add_plugin(Plugins.Window())
+        ..add_plugin(Plugins.Nodes(Root()))
+        ..run()
+}
+```
+
+Un enfant `always` continue même sous un parent suspendu ou `disabled`.
+`when_paused` convient à un menu actif seulement en pause. Un mode explicite
+devient à son tour la valeur héritée par ses descendants ; changer de parent ou
+de mode actualise cet héritage. `disabled` suspend les callbacks récurrents,
+sans démonter le sous-arbre ni empêcher un enfant d’avoir son propre mode.
+`set_process(false)` désactive seulement le callback du nœud concerné,
+indépendamment de son mode. `on_ready` et `on_exit_tree` restent exécutés.
+
+L’état de pause est lu une fois par passage des callbacks ; un changement
+pendant ce passage s’applique aux nœuds au passage suivant. Les callbacks qui
+restent actifs reçoivent le delta réel de la frame. Les ajouts, retraits et
+synchronisations de propriétés continuent pendant la pause.
+
 ## Modifier l’arbre pendant l’exécution
 
 `add_child` et `remove_child` fonctionnent avant le démarrage, depuis
