@@ -113,5 +113,54 @@ callback are coalesced before publication to ECS. A change made outside a
 callback is published on the next update cycle. Only affected descendant
 transforms are propagated.
 
-This first base focuses on trees built before startup. Adding or removing
-children while a tree is mounted is not supported yet.
+## Change the tree at runtime
+
+`add_child` and `remove_child` work before startup, from `on_ready`,
+`on_process` and `on_exit_tree`, and between updates. Node properties remain
+editable at runtime.
+
+This fragment creates children when their parent becomes ready:
+
+```sx
+class Player:Nodes.Node2D {
+    override func on_ready() {
+        self.add_child(Nodes.Canvas2D("Body"))
+    }
+}
+
+class Root:Nodes.Node {
+    override func on_ready() {
+        self.add_child(Player())
+    }
+}
+```
+
+The links observed through `parent`, `children`, `child_count` and `path`
+change immediately. ECS mounting and callbacks wait for a safe point: after
+startup callbacks, then before and after the `on_process` pass. A child added
+from `on_ready` is therefore ready by the end of startup; a node added during
+`on_process` receives its first process callback on the next update. Existing
+children mount before their parent's `on_ready`; additions requested by a
+callback mount after it returns.
+
+`remove_child` returns the detached node, or `null` if it was not a child.
+The subtree immediately stops receiving new `on_process` calls. At the next
+safe point, children receive `on_exit_tree` before their parent and their
+entities are destroyed. `is_inside_tree` and `entity` describe ECS mounting:
+they remain set until unmounting, including inside `on_exit_tree`, then become
+`false` and `null`. The detached object and its properties remain usable while
+the application retains a reference.
+
+To change parents, call `remove_child`, then `add_child` on the new parent.
+The subtree receives new entities and another `on_ready`; `ready_count` counts
+these mounts. Local transforms are preserved and composed with the new spatial
+parent. When moving between trees, mounting in the new tree waits for the old
+tree to unmount the subtree in its own ECS world; both trees must therefore
+continue updating.
+
+An addition cancelled before mounting receives no callbacks. Shutdown completes
+pending removals and unmounts all remaining mounted nodes. Additions targeting
+the stopping tree change the object hierarchy but create no new entities.
+
+Cycles, duplicate sibling names and adding a node that already has a parent
+remain forbidden. A mounted tree root cannot become another node's child.

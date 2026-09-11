@@ -1,0 +1,364 @@
+use GFX.Application
+use GFX.Canvas
+use GFX.Color
+use GFX.ECS
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Scene2D
+use GFX.Scene3D
+use STD.Math
+
+class Tracked:Nodes.Node2D {
+    var processes:int = 0
+    var exits:int = 0
+
+    init(name:str = "Tracked"):super(name) {}
+    override func on_process(delta:float) { self.processes++ }
+    override func on_exit_tree() { self.exits++ }
+}
+
+class Body:Nodes.Canvas2D {
+    init():super("Body") {
+        self.position = Math.Vec2(5.0, 2.0)
+        self.paint(func(painter:&Canvas.Painter) {
+            painter.fill(
+                Canvas.Rect(Math.Vec2(-12.0), Math.Vec2(24.0), 6.0),
+                Canvas.Fill.solid(Color.cyan_400())
+            )
+        })
+    }
+}
+
+class Player:Nodes.Node3D {
+    override func on_ready() { self.add_child(Body()) }
+}
+
+class BuildingRoot:Nodes.Node {
+    override func on_ready() { self.add_child(Player()) }
+}
+
+class RemovingNode:Tracked {
+    var target:Nodes.Node? = null
+    var replacement:Nodes.Node? = null
+
+    init():super("RemovingNode") {}
+    override func on_process(delta:float) {
+        super.on_process(delta)
+        if self.processes != 1 { return }
+        var parent = self.parent()!
+        if let target = self.target { parent.remove_child(target) }
+        if let replacement = self.replacement { parent.add_child(replacement) }
+        self.position = Math.Vec2(99.0)
+        parent.remove_child(self)
+    }
+}
+
+class ExitSpawner:Tracked {
+    var destination:Nodes.Node
+    var spawned:Tracked
+
+    init(destination:Nodes.Node):super("ExitSpawner") {
+        self.destination = destination
+        self.spawned = Tracked("Spawned")
+    }
+    override func on_exit_tree() {
+        super.on_exit_tree()
+        self.destination.add_child(self.spawned)
+    }
+}
+
+class ReadyRemover:Tracked {
+    var target:Nodes.Node
+
+    init(target:Nodes.Node):super("ReadyRemover") { self.target = target }
+    override func on_ready() { self.parent()!.remove_child(self.target) }
+}
+
+func start(root:Nodes.Node) Application {
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    application.prepare()
+    application.run_schedule(Application.Schedule.startup)
+    return application
+}
+
+test "build nested nodes from ready callbacks through the public plugin" {
+    var root = BuildingRoot()
+    var application = start(root)
+    var player = root.child(0)
+    var body = player.child(0)
+    assert(root.ready_count() == 1)
+    assert(player.ready_count() == 1)
+    assert(body.ready_count() == 1)
+    assert(body.is_inside_tree())
+    assert(body.path() == "/Node/Node3D/Body")
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    assert(world.has<Scene3D.Transform>(player.entity()!))
+    assert(world.has<Scene2D.Canvas>(body.entity()!))
+    assert(world.get<Scene2D.Transform>(body.entity()!).position == Math.Vec2(5.0, 2.0))
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(body.entity() == null)
+}
+
+test "attach modify remove and remount a subtree without stale processing" {
+    var root = Nodes.Node("Root")
+    var left = Nodes.Node2D("Left", Math.Vec2(10.0))
+    var right = Nodes.Node2D("Right", Math.Vec2(20.0))
+    root.add_child(left)
+    root.add_child(right)
+    var application = start(root)
+    var actor = Tracked()
+    var body = Body()
+    actor.add_child(body)
+    left.add_child(actor)
+    assert(actor.path() == "/Root/Left/Tracked")
+    assert(!actor.is_inside_tree())
+    application.run_schedule(Application.Schedule.update)
+    let previous = actor.entity()!
+    let previous_body = body.entity()!
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    assert(actor.processes == 1)
+    assert(world.get<Scene2D.Transform>(previous_body).position == Math.Vec2(15.0, 12.0))
+
+    actor.position = Math.Vec2(3.0)
+    right.position = Math.Vec2(30.0)
+    assert(left.remove_child(actor) != null)
+    right.add_child(actor)
+    assert(actor.path() == "/Root/Right/Tracked")
+    application.run_schedule(Application.Schedule.update)
+    assert(!world.is_alive(previous))
+    assert(!world.is_alive(previous_body))
+    assert(actor.ready_count() == 2)
+    assert(actor.exits == 1)
+    assert(actor.processes == 2)
+    assert(world.get<Scene2D.Transform>(body.entity()!).position == Math.Vec2(38.0, 35.0))
+
+    var iteration = 0
+    while iteration < 4 {
+        right.remove_child(actor)
+        application.run_schedule(Application.Schedule.update)
+        assert(actor.entity() == null)
+        assert(body.entity() == null)
+        assert(actor.processes == iteration + 2)
+        actor.position = Math.Vec2(4.0)
+        right.add_child(actor)
+        application.run_schedule(Application.Schedule.update)
+        assert(actor.processes == iteration + 3)
+        iteration++
+    }
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(actor.exits == 6)
+}
+
+test "remove self and a pending sibling from process and add a replacement" {
+    var root = Nodes.Node("Root")
+    var remover = RemovingNode()
+    var victim = Tracked("Victim")
+    var replacement = Tracked("Replacement")
+    remover.target = victim
+    remover.replacement = replacement
+    root.add_child(remover)
+    root.add_child(victim)
+    var application = start(root)
+    let victim_entity = victim.entity()!
+    application.run_schedule(Application.Schedule.update)
+    assert(remover.processes == 1)
+    assert(victim.processes == 0)
+    assert(victim.exits == 1)
+    assert(remover.exits == 1)
+    assert(replacement.ready_count() == 1)
+    assert(replacement.processes == 0)
+    assert(root.child_count() == 1)
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    assert(!world.is_alive(victim_entity))
+    application.run_schedule(Application.Schedule.update)
+    assert(replacement.processes == 1)
+    assert(remover.processes == 1)
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "cancel an attachment before mounting and skip children removed during ready" {
+    var root = Nodes.Node("Root")
+    var victim = Tracked("Victim")
+    root.add_child(ReadyRemover(victim))
+    root.add_child(victim)
+    var application = start(root)
+    assert(victim.ready_count() == 0)
+    assert(victim.entity() == null)
+    var transient = Tracked("Transient")
+    root.add_child(transient)
+    root.remove_child(transient)
+    application.run_schedule(Application.Schedule.update)
+    assert(transient.ready_count() == 0)
+    assert(transient.exits == 0)
+    assert(transient.entity() == null)
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "preserve the mounted subtree when detached children change before teardown" {
+    var root = Nodes.Node("Root")
+    var branch = Tracked("Branch")
+    var child = Tracked("Child")
+    branch.add_child(child)
+    root.add_child(branch)
+    var application = start(root)
+    let old_child = child.entity()!
+    root.remove_child(branch)
+    branch.remove_child(child)
+    root.add_child(child)
+    application.run_schedule(Application.Schedule.update)
+    assert(branch.entity() == null)
+    assert(branch.exits == 1)
+    assert(child.exits == 1)
+    assert(child.ready_count() == 2)
+    assert(child.processes == 1)
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    assert(!world.is_alive(old_child))
+    assert(world.is_alive(child.entity()!))
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+struct RemovalCheck {
+    var entity:ECS.Entity
+}
+
+func verify_shutdown(world:@ECS.World, check:@RemovalCheck) {
+    assert(!world.is_alive(check.entity))
+}
+
+test "apply exit callback changes and drain removals at shutdown" {
+    var root = Nodes.Node("Root")
+    var spawner = ExitSpawner(root)
+    root.add_child(spawner)
+    var application = start(root)
+    root.remove_child(spawner)
+    application.run_schedule(Application.Schedule.update)
+    assert(spawner.exits == 1)
+    assert(spawner.spawned.ready_count() == 1)
+    assert(spawner.spawned.processes == 1)
+    let spawned_entity = spawner.spawned.entity()!
+    root.remove_child(spawner.spawned)
+    application.add_resource(RemovalCheck(entity:spawned_entity))
+    application.add_after_system(Application.Schedule.shutdown, verify_shutdown)
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(spawner.spawned.exits == 1)
+    assert(spawner.spawned.entity() == null)
+}
+
+test "transfer between trees only after releasing the original world" {
+    var first_root = Nodes.Node("First")
+    var second_root = Nodes.Node("Second")
+    var actor = Tracked()
+    first_root.add_child(actor)
+    var first = start(first_root)
+    var second = start(second_root)
+    let old_entity = actor.entity()!
+    first_root.remove_child(actor)
+    second_root.add_child(actor)
+    second.run_schedule(Application.Schedule.update)
+    assert(actor.ready_count() == 1)
+    first.run_schedule(Application.Schedule.update)
+    assert(actor.entity() == null)
+    second.run_schedule(Application.Schedule.update)
+    assert(actor.ready_count() == 2)
+    assert(actor.processes == 1)
+    var first_resources = first.resources()
+    var first_world:@ECS.World = first_resources.get<ECS.World>()
+    assert(!first_world.is_alive(old_entity))
+    first.run_schedule(Application.Schedule.shutdown)
+    assert(actor.is_inside_tree())
+    second.run_schedule(Application.Schedule.shutdown)
+    assert(actor.exits == 2)
+}
+
+class RemovingReadyBranch:Tracked {
+    var target:Nodes.Node
+    init(target:Nodes.Node):super("RemovingReadyBranch") { self.target = target }
+    override func on_ready() {
+        self.target.parent()!.remove_child(self.target)
+    }
+}
+
+test "a ready callback can remove its ancestor before the ancestor becomes ready" {
+    var root = Nodes.Node("Root")
+    var branch = Tracked("Branch")
+    var leaf = RemovingReadyBranch(branch)
+    branch.add_child(leaf)
+    root.add_child(branch)
+    var application = start(root)
+    assert(root.ready_count() == 1)
+    assert(branch.ready_count() == 0)
+    assert(leaf.ready_count() == 1)
+    assert(branch.exits == 1)
+    assert(leaf.exits == 1)
+    assert(branch.entity() == null)
+    assert(leaf.entity() == null)
+    application.run_schedule(Application.Schedule.update)
+    assert(leaf.processes == 0)
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "recompose 3D transforms after reparenting with pending property changes" {
+    var root = Nodes.Node("Root")
+    var left = Nodes.Node3D("Left", Math.Vec3(10.0))
+    var right = Nodes.Node3D("Right", Math.Vec3(20.0))
+    var child = Nodes.Camera3D(name:"Camera")
+    left.add_child(child)
+    root.add_child(left)
+    root.add_child(right)
+    var application = start(root)
+    child.position = Math.Vec3(3.0)
+    child.active = false
+    left.remove_child(child)
+    right.add_child(child)
+    right.position = Math.Vec3(30.0)
+    application.run_schedule(Application.Schedule.update)
+    var resources = application.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    assert(world.get<Scene3D.Transform>(child.entity()!).position == Math.Vec3(33.0))
+    assert(!world.get<Scene3D.Camera>(child.entity()!).active)
+    assert(child.ready_count() == 2)
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "shutdown callbacks can edit the hierarchy without mounting new children" {
+    var root = Nodes.Node("Root")
+    var spawner = ExitSpawner(root)
+    root.add_child(spawner)
+    var application = start(root)
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(spawner.exits == 1)
+    assert(root.child_count() == 2)
+    assert(spawner.spawned.ready_count() == 0)
+    assert(spawner.spawned.entity() == null)
+}
+
+class CancellingParent:Nodes.Node2D {
+    var target:Nodes.Node? = null
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        if let target = self.target {
+            self.remove_child(target)
+            self.target = null
+        }
+    }
+}
+
+test "recheck attachment after a parent synchronization edits its children" {
+    var root = Nodes.Node("Root")
+    var parent = CancellingParent()
+    root.add_child(parent)
+    var application = start(root)
+    var child = Tracked()
+    parent.position = Math.Vec2(1.0)
+    parent.target = child
+    parent.add_child(child)
+    application.run_schedule(Application.Schedule.update)
+    assert(child.parent() == null)
+    assert(child.entity() == null)
+    assert(child.ready_count() == 0)
+    application.run_schedule(Application.Schedule.shutdown)
+}

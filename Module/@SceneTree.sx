@@ -6,6 +6,8 @@ public class SceneTree {
     private var current_frame:int
     private var current_process_nodes:Node[]
     private var current_dirty_nodes:Node[]
+    private var pending_attachments:Node[] = []
+    private var pending_detachments:Node[] = []
 
     init(root:Node) {
         self.current_root = root
@@ -23,33 +25,51 @@ public class SceneTree {
         if self.current_running { panic("SceneTree is already running") }
         self.current_process_nodes.clear()
         self.current_dirty_nodes.clear()
-        self.current_root.mount_subtree(world, self)
+        if self.current_root.parent() != null {
+            panic("SceneTree root must not have a parent")
+        }
         self.current_running = true
+        self.current_root.mount_subtree(world, self)
+        self.flush_mutations(world)
+        self.flush_synchronizations(world)
     }
 
     module func process(delta:float, world:&ECS.World) {
         if !self.current_running {
             panic("SceneTree must be started before processing")
         }
+        self.flush_mutations(world)
         let node_count = self.current_process_nodes.count()
         var index = 0
         while index < node_count {
             var node = self.current_process_nodes[index]
-            if node.is_inside_tree() && node.is_processing() {
+            if node.can_process(self) && node.is_processing() {
                 node.process_frame(delta, world)
             }
             index++
         }
+        self.flush_mutations(world)
         self.flush_synchronizations(world)
         self.current_frame++
     }
 
     module func stop(world:&ECS.World) {
         if !self.current_running { return }
-        self.current_root.unmount_subtree(world)
+        self.current_running = false
+        self.pending_detachments.append(self.current_root)
+        self.flush_detachments(world)
         self.current_process_nodes.clear()
         self.current_dirty_nodes.clear()
-        self.current_running = false
+        self.pending_attachments.clear()
+        self.pending_detachments.clear()
+    }
+
+    module func register_attachment(node:Node) {
+        if self.current_running { self.pending_attachments.append(node) }
+    }
+
+    module func register_detachment(node:Node) {
+        self.pending_detachments.append(node)
     }
 
     module func register_process(node:Node) {
@@ -60,6 +80,42 @@ public class SceneTree {
         self.current_dirty_nodes.append(node)
     }
 
+    // These queues are empty on unchanged frames. Registry compaction happens
+    // only after removals, once per batch, before any node can be mounted again.
+    private func flush_detachments(world:&ECS.World) {
+        if self.pending_detachments.count() == 0 { return }
+        while self.pending_detachments.count() > 0 {
+            var pending = self.pending_detachments
+            self.pending_detachments = []
+            for var node in pending {
+                if node.belongs_to(self) { node.unmount_subtree(world) }
+            }
+        }
+        var processing = self.current_process_nodes
+        self.current_process_nodes = []
+        for node in processing {
+            if node.can_process(self) { self.current_process_nodes.append(node) }
+        }
+        var dirty = self.current_dirty_nodes
+        self.current_dirty_nodes = []
+        for node in dirty {
+            if node.can_process(self) { self.current_dirty_nodes.append(node) }
+        }
+    }
+
+    private func flush_mutations(world:&ECS.World) {
+        self.flush_detachments(world)
+        while self.pending_attachments.count() > 0 {
+            var pending = self.pending_attachments
+            self.pending_attachments = []
+            for var node in pending {
+                self.flush_detachments(world)
+                if node.can_attach(self) { node.mount_subtree(world, self) }
+            }
+            self.flush_detachments(world)
+        }
+    }
+
     func print_tree() {
         self.current_root.print_branch("")
     }
@@ -68,7 +124,7 @@ public class SceneTree {
         var pending = self.current_dirty_nodes
         self.current_dirty_nodes = []
         for var node in pending {
-            node.flush_synchronization(world)
+            if node.can_process(self) { node.flush_synchronization(world) }
         }
     }
 }

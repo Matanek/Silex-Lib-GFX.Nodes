@@ -115,6 +115,56 @@ même `on_process` sont regroupées avant leur publication dans l’ECS. Une
 modification effectuée hors callback est publiée au prochain cycle de mise à
 jour. Seuls les transforms descendants réellement affectés sont propagés.
 
-La première base privilégie les arbres construits avant le démarrage. L’ajout
-et le retrait d’enfants pendant que l’arbre est monté ne sont pas encore pris
-en charge.
+## Modifier l’arbre pendant l’exécution
+
+`add_child` et `remove_child` fonctionnent avant le démarrage, depuis
+`on_ready`, `on_process` et `on_exit_tree`, ainsi qu’entre les mises à jour.
+Les propriétés des nœuds restent modifiables à chaud.
+
+Ce fragment construit les enfants quand leur parent devient prêt :
+
+```sx
+class Player:Nodes.Node2D {
+    override func on_ready() {
+        self.add_child(Nodes.Canvas2D("Body"))
+    }
+}
+
+class Root:Nodes.Node {
+    override func on_ready() {
+        self.add_child(Player())
+    }
+}
+```
+
+Les liens observés par `parent`, `children`, `child_count` et `path` changent
+dès l’appel. Le montage ECS et les callbacks attendent un point sûr : après
+les callbacks de démarrage, puis avant et après le passage des `on_process`.
+Un enfant ajouté dans `on_ready` est donc prêt à la fin du démarrage ; un
+nœud ajouté pendant `on_process` reçoit son premier traitement à la mise à
+jour suivante. Les enfants déjà présents sont montés avant le `on_ready` de
+leur parent ; les ajouts demandés par un callback sont montés après son retour.
+
+`remove_child` renvoie le nœud détaché, ou `null` s’il n’était pas un enfant.
+Le sous-arbre cesse immédiatement de recevoir de nouveaux `on_process`. Au
+point sûr suivant, les enfants puis leur parent reçoivent `on_exit_tree` et
+leurs entités sont détruites. `is_inside_tree` et `entity` décrivent ce montage
+ECS : ils restent renseignés jusqu’au démontage, y compris dans `on_exit_tree`,
+puis deviennent respectivement `false` et `null`. L’objet détaché et ses
+propriétés restent utilisables tant que l’application en conserve une référence.
+
+Pour changer de parent, appeler `remove_child`, puis `add_child` sur le nouveau
+parent. Le sous-arbre reçoit de nouvelles entités et un nouveau `on_ready` ;
+`ready_count` compte ces montages. Ses transforms locaux sont conservés et
+recomposés avec le nouveau parent spatial. Entre deux arbres, le montage dans
+le nouvel arbre attend que l’ancien ait démonté le sous-arbre dans son propre
+monde ECS ; chaque arbre doit donc continuer à être mis à jour.
+
+Un ajout annulé avant son montage ne reçoit aucun callback. À l’arrêt, les
+retraits en attente sont terminés et tous les nœuds encore montés sont démontés.
+Les ajouts effectués vers l’arbre qui s’arrête modifient la hiérarchie objet,
+mais ne créent pas de nouvelles entités.
+
+Les cycles, les noms identiques parmi les enfants d’un même parent et l’ajout
+d’un nœud ayant déjà un parent restent interdits. La racine d’un arbre monté
+ne peut pas devenir l’enfant d’un autre nœud.

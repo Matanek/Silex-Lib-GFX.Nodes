@@ -9,6 +9,9 @@ public class Node {
     private var current_children:Node[]
     private var current_entity:ECS.Entity? = null
     private var current_tree:SceneTree? = null
+    private var mounted_parent:Node? = null
+    private var mounted_children:Node[] = []
+    private var pending_detachment:bool = false
     private var current_inside_tree:bool
     private var current_dirty:bool
     private var current_synchronization_registered:bool
@@ -62,9 +65,6 @@ public class Node {
     }
 
     func add_child(child:Node) Node {
-        if self.current_inside_tree {
-            panic("runtime Node attachment is not implemented")
-        }
         if child == self {
             panic("a Node cannot be its own child")
         }
@@ -78,20 +78,29 @@ public class Node {
             panic("Node '$(self.path())' already has a child named '$(child.name())'")
         }
 
+        if let tree = child.current_tree {
+            if tree.root() == child {
+                panic("a mounted SceneTree root cannot become a child")
+            }
+        }
         child.current_parent = self
         self.current_children.append(child)
+        if let tree = self.destination_tree() {
+            tree.register_attachment(child)
+        }
         return self
     }
 
     func remove_child(child:Node) Node? {
-        if self.current_inside_tree {
-            panic("runtime Node detachment is not implemented")
-        }
         var index = 0
         while index < self.current_children.count() {
             if self.current_children[index] == child {
                 var removed = self.current_children.take(index)
                 removed.current_parent = null
+                if let tree = removed.current_tree {
+                    removed.suspend_subtree()
+                    tree.register_detachment(removed)
+                }
                 return removed
             }
             index++
@@ -173,9 +182,16 @@ public class Node {
         if self.current_inside_tree {
             panic("Node '$(self.path())' is already inside a SceneTree")
         }
+        if var parent = self.current_parent { parent.flush_synchronization(world) }
+        if self != tree.root() && !self.can_attach(tree) { return }
         let entity = world.spawn(ECS.EntityRecipe())
         self.current_tree = tree
         self.current_inside_tree = true
+        self.pending_detachment = false
+        self.mounted_parent = self.current_parent
+        if var parent = self.mounted_parent {
+            parent.mounted_children.append(self)
+        }
         self.current_dirty = false
         self.current_synchronization_registered = false
         if !self.current_process_configured {
@@ -192,9 +208,13 @@ public class Node {
 
         var children = self.current_children
         for var child in children {
-            child.mount_subtree(world, tree)
+            if self.can_process(tree) && child.current_parent == self &&
+                !child.current_inside_tree
+            {
+                child.mount_subtree(world, tree)
+            }
         }
-        self.ready()
+        if !self.pending_detachment { self.ready() }
         self.flush_synchronization(world)
     }
 
@@ -206,15 +226,13 @@ public class Node {
         self.current_processing = true
         self.process(delta)
         self.current_processing = false
-        if self.current_dirty {
-            self.current_dirty = false
-            self.current_synchronization_registered = false
-            self.synchronize(world, self.current_entity!)
-        }
+        self.flush_synchronization(world)
     }
 
     module func flush_synchronization(world:&ECS.World) {
-        if !self.current_dirty { return }
+        if !self.current_inside_tree || self.pending_detachment ||
+            !self.current_dirty
+        { return }
         self.current_dirty = false
         self.current_synchronization_registered = false
         self.synchronize(world, self.current_entity!)
@@ -222,7 +240,8 @@ public class Node {
 
     module func unmount_subtree(world:&ECS.World) {
         if !self.current_inside_tree { return }
-        var children = self.current_children
+        self.suspend_subtree()
+        var children = self.mounted_children
         for var child in children {
             child.unmount_subtree(world)
         }
@@ -234,6 +253,52 @@ public class Node {
         self.current_synchronization_registered = false
         self.current_process_registered = false
         self.current_processing = false
+        if var parent = self.mounted_parent {
+            var index = 0
+            while index < parent.mounted_children.count() {
+                if parent.mounted_children[index] == self {
+                    parent.mounted_children.take(index)
+                    break
+                }
+                index++
+            }
+        }
+        self.mounted_parent = null
+        self.mounted_children.clear()
+        if let tree = self.destination_tree() {
+            tree.register_attachment(self)
+        }
+    }
+
+    // Object topology is immediate; ECS ownership changes only with a World borrow.
+    module func destination_tree() SceneTree? {
+        if let parent = self.current_parent { return parent.destination_tree() }
+        if let tree = self.current_tree {
+            if tree.root() == self { return tree }
+        }
+        return null
+    }
+
+    module func belongs_to(tree:SceneTree) bool { return self.current_tree == tree }
+
+    module func can_process(tree:SceneTree) bool {
+        return self.current_tree == tree && self.current_inside_tree &&
+            !self.pending_detachment
+    }
+
+    module func can_attach(tree:SceneTree) bool {
+        if self.current_inside_tree { return false }
+        if let parent = self.current_parent {
+            return parent.can_process(tree) && self.destination_tree() == tree
+        }
+        return false
+    }
+
+    private func suspend_subtree() {
+        if self.pending_detachment { return }
+        self.pending_detachment = true
+        var children = self.mounted_children
+        for var child in children { child.suspend_subtree() }
     }
 
     module func print_branch(indent:str) {
