@@ -60,9 +60,7 @@ class Quitter:Nodes.Node {
 
     override func on_process(delta:float) {
         self.frames++
-        var resources = self.resources()
-        var controller = resources.get_mut<Application.Controller>()
-        controller.stop()
+        self.quit_application()
     }
 
     override func on_exit_tree() {
@@ -78,7 +76,7 @@ func verify_stopped(application:Application) {
     assert(stopped)
 }
 
-test "a node stops its application through the controller resource" {
+test "a node quits its application through the shortcut" {
     var root = Quitter()
     var application = Application()
         ..add_plugin(Plugins.Nodes(root))
@@ -136,7 +134,7 @@ func verify_parent_running(application:Application) {
     assert(running && bundle_stopped)
 }
 
-test "node resources use the Bundle scope and stop only its controller" {
+test "node resources and quit shortcut use only the Bundle scope" {
     var root = ScopedQuitter()
     var application = Application()
         ..add_resource(GameState(value:1))

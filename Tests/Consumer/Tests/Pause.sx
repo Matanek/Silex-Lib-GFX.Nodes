@@ -8,6 +8,41 @@ class Counter:Nodes.Node {
     override func on_process(delta:float) { self.frames++ }
 }
 
+class PauseMenu:Nodes.Node {
+    var request_pause:bool = true
+
+    override func on_ready() { self.set_process_mode(Application.ProcessMode.always) }
+
+    override func on_process(delta:float) {
+        if self.request_pause { self.pause_application() }
+        else { self.resume_application() }
+        assert(self.is_application_paused() == self.request_pause)
+    }
+}
+
+test "node shortcuts pause and resume only their Bundle while an active menu keeps processing" {
+    var root = Nodes.Node("Game")
+    var player = Counter("Player")
+    var menu = PauseMenu()
+    root.add_child(player)
+    root.add_child(menu)
+    var application = Application()
+    var bundle = Application.Bundle(application)..add_plugin(Plugins.Nodes(root))
+    application.add_plugin(Application.BundleManager(bundle))
+    application.run_schedule(Application.Schedule.startup)
+    application.run_schedule(Application.Schedule.update)
+    assert(bundle.resources().get<Application.Simulation>().is_paused())
+    assert(!application.resources().get<Application.Simulation>().is_paused())
+    application.run_schedule(Application.Schedule.update)
+    assert(player.frames == 1)
+    menu.request_pause = false
+    application.run_schedule(Application.Schedule.update)
+    assert(!bundle.resources().get<Application.Simulation>().is_paused())
+    application.run_schedule(Application.Schedule.update)
+    assert(player.frames == 2)
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
 func pause(application:Application) {
     var resources = application.resources()
     var simulation = resources.get_mut<Application.Simulation>()
@@ -52,7 +87,7 @@ test "node pause modes inherit and allow active interface descendants" {
 test "inherited pause policy follows reparenting and mode changes" {
     var root = Counter("Game")
     var ui = Counter("UI")
-    ui.process_mode = Application.ProcessMode.always
+    ui.set_process_mode(Application.ProcessMode.always)
     var child = Counter("Child")
     ui.add_child(child)
     root.add_child(ui)
@@ -65,10 +100,10 @@ test "inherited pause policy follows reparenting and mode changes" {
     root.add_child(child)
     application.run_schedule(Application.Schedule.update)
     assert(child.frames == 1 && child.ready_count() == 2)
-    root.process_mode = Application.ProcessMode.always
+    root.set_process_mode(Application.ProcessMode.always)
     application.run_schedule(Application.Schedule.update)
     assert(root.frames == 1 && child.frames == 2)
-    root.process_mode = Application.ProcessMode.disabled
+    root.set_process_mode(Application.ProcessMode.disabled)
     application.run_schedule(Application.Schedule.update)
     assert(root.frames == 1 && child.frames == 2 && ui.frames == 4)
     application.run_schedule(Application.Schedule.shutdown)

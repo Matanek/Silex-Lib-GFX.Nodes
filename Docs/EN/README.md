@@ -117,8 +117,19 @@ transforms are propagated.
 
 The `process_mode` property uses `Application.ProcessMode`. By default,
 `inherit` takes the parent's effective mode; a root uses `pausable`.
-Pausing `Application.Simulation` therefore suspends game `on_process` callbacks
+Pausing the application therefore suspends game `on_process` callbacks
 while preserving entities and their rendering.
+
+`self.pause_application()` and `self.resume_application()` pause and resume the
+current application; `self.is_application_paused()` reads its state. In a
+Bundle, they target only that Bundle.
+These protected shortcuts are available in `on_ready`, `on_process` and
+`on_exit_tree`, under the same availability rules as `resources()`. They do
+not pause only the calling node's subtree.
+
+`set_process_mode(mode)` sets the Node's mode and updates inheritance for its
+descendants just like assigning `process_mode`. This public method is available
+before mounting and at runtime, and can be used in a cascade.
 
 In this complete example, Escape pauses the player and can resume it:
 
@@ -136,17 +147,15 @@ class Player:Nodes.Node {
 
 class Root:Nodes.Node {
     override func on_ready() {
-        self.process_mode = Application.ProcessMode.always
-        self.add_child(Player()..process_mode = Application.ProcessMode.pausable)
+        self.set_process_mode(Application.ProcessMode.always)
+        self.add_child(Player()..set_process_mode(Application.ProcessMode.pausable))
     }
 
     override func on_process(delta:float) {
         let toggle = self.input().is_pressed(Input.Key.escape)
         if toggle {
-            var resources = self.resources()
-            var simulation = resources.get_mut<Application.Simulation>()
-            if simulation.is_paused() { simulation.resume() }
-            else { simulation.pause() }
+            if self.is_application_paused() { self.resume_application() }
+            else { self.pause_application() }
         }
     }
 }
@@ -280,9 +289,7 @@ class Root:Nodes.Node {
     override func on_process(delta:float) {
         let quit = self.input().is_pressed(Input.Key.escape)
         if quit {
-            var resources = self.resources()
-            var controller = resources.get_mut<Application.Controller>()
-            controller.stop()
+            self.quit_application()
         }
     }
 }
@@ -295,7 +302,9 @@ func main() {
 }
 ```
 
-`stop()` requests loop termination; node exit callbacks then run. Inside a
+`self.quit_application()` is a protected shortcut to `Application.Controller.stop()`.
+It is available in the same callbacks as `resources()`. It requests loop
+termination; node exit callbacks then run. Inside a
 Bundle, the node accesses that Bundle's local resources, with the usual
 fallback to parent resources. Its controller stops only the Bundle. After a
 node moves to another tree, callbacks use the destination context's resources.

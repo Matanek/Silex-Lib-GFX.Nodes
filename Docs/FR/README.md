@@ -119,8 +119,19 @@ jour. Seuls les transforms descendants réellement affectés sont propagés.
 
 La propriété `process_mode` utilise `Application.ProcessMode`. Par défaut,
 `inherit` reprend le mode effectif du parent ; une racine utilise `pausable`.
-La pause de `Application.Simulation` suspend donc les `on_process` du jeu tout
+Mettre l’application en pause suspend donc les `on_process` du jeu tout
 en conservant les entités et leur rendu.
+
+`self.pause_application()` et `self.resume_application()` mettent en pause et
+reprennent l’application courante ; `self.is_application_paused()` lit son état.
+Dans un Bundle, ils ciblent uniquement ce Bundle. Ces raccourcis protégés
+s’utilisent dans `on_ready`, `on_process` et
+`on_exit_tree`, avec les mêmes règles de disponibilité que `resources()`.
+Ils ne suspendent pas seulement le sous-arbre du nœud appelant.
+
+`set_process_mode(mode)` règle le mode du Node et actualise l’héritage de ses
+descendants comme l’affectation à `process_mode`. Cette méthode publique peut
+être appelée avant le montage ou pendant l’exécution, et utilisée en cascade.
 
 Dans cet exemple complet, Échap suspend le joueur et peut aussi le réactiver :
 
@@ -138,17 +149,15 @@ class Player:Nodes.Node {
 
 class Root:Nodes.Node {
     override func on_ready() {
-        self.process_mode = Application.ProcessMode.always
-        self.add_child(Player()..process_mode = Application.ProcessMode.pausable)
+        self.set_process_mode(Application.ProcessMode.always)
+        self.add_child(Player()..set_process_mode(Application.ProcessMode.pausable))
     }
 
     override func on_process(delta:float) {
         let toggle = self.input().is_pressed(Input.Key.escape)
         if toggle {
-            var resources = self.resources()
-            var simulation = resources.get_mut<Application.Simulation>()
-            if simulation.is_paused() { simulation.resume() }
-            else { simulation.pause() }
+            if self.is_application_paused() { self.resume_application() }
+            else { self.pause_application() }
         }
     }
 }
@@ -285,9 +294,7 @@ class Root:Nodes.Node {
     override func on_process(delta:float) {
         let quit = self.input().is_pressed(Input.Key.escape)
         if quit {
-            var resources = self.resources()
-            var controller = resources.get_mut<Application.Controller>()
-            controller.stop()
+            self.quit_application()
         }
     }
 }
@@ -300,7 +307,9 @@ func main() {
 }
 ```
 
-`stop()` demande l’arrêt de la boucle ; les callbacks de sortie des nœuds sont
+`self.quit_application()` est un raccourci protégé vers `Application.Controller.stop()`.
+Il s’utilise depuis les mêmes callbacks que `resources()`. Il demande l’arrêt
+de la boucle ; les callbacks de sortie des nœuds sont
 ensuite exécutés. Dans un Bundle, le nœud accède aux ressources locales de ce
 Bundle, avec le repli habituel vers les ressources parentes. Son contrôleur
 arrête uniquement le Bundle. Après un changement d’arbre, les callbacks

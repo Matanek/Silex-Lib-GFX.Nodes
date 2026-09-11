@@ -76,6 +76,10 @@ public class Node {
     func process_delta() float { return self.current_process_delta }
     func is_processing() bool { return self.current_process_enabled }
 
+    func set_process_mode(mode:Application.ProcessMode) {
+        self.process_mode = mode
+    }
+
     func set_process(enabled:bool) {
         self.current_process_configured = true
         if self.current_process_enabled == enabled { return }
@@ -210,6 +214,29 @@ public class Node {
             panic("Node resources are only available while mounted in a SceneTree")
         }
         return self.current_tree!.resources()
+    }
+
+    protected func quit_application() {
+        var resources = self.resources()
+        var controller = resources.get_mut<Application.Controller>()
+        controller.stop()
+    }
+
+    protected func pause_application() {
+        var resources = self.resources()
+        var simulation = resources.get_mut<Application.Simulation>()
+        simulation.pause()
+    }
+
+    protected func resume_application() {
+        var resources = self.resources()
+        var simulation = resources.get_mut<Application.Simulation>()
+        simulation.resume()
+    }
+
+    protected func is_application_paused() bool {
+        var resources = self.resources()
+        return resources.get<Application.Simulation>().is_paused()
     }
 
     protected func input() @Input.State {
