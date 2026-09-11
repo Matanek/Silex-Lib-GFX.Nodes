@@ -113,6 +113,55 @@ callback are coalesced before publication to ECS. A change made outside a
 callback is published on the next update cycle. Only affected descendant
 transforms are propagated.
 
+## Enable or disable a branch
+
+`node.enable(false)` makes the node and its descendants inactive: their
+`on_process`, animations and rendering stop, and their physical bodies no
+longer participate in simulation or spatial queries. `node.enable(true)`
+reactivates the branch. An explicitly disabled child stays disabled when its
+parent is enabled again.
+
+This fragment separates the whole object from its visual representation:
+
+```sx
+var enemy = Nodes.Node("Enemy")
+var visual = Nodes.Canvas2D("Visual")
+enemy.add_child(visual)
+visual.enable(false) // The parent behavior remains active.
+enemy.enable(false)  // The whole branch becomes inactive.
+enemy.enable(true)   // Visual remains disabled.
+```
+
+Objects stay in the tree and retain their entities, components and settings.
+Reactivation does not call `on_ready` again. Local visibility, `process_mode`
+and the `set_process` setting remain unchanged. An `always` mode cannot bypass
+a disabled ancestor. Render nodes still expose `visible` to hide their output
+while their animations and behavior keep advancing.
+
+`is_enabled()` reads the local choice. `is_enabled_in_tree()` reports whether
+the node is mounted and active given its ancestors. Inheritance changes
+immediately on `enable` or reparenting; component properties remain editable
+while inactive.
+
+A subclass can override `on_enable()` and `on_disable()`. An active node
+receives its first `on_enable` after `on_ready`. A node mounted inactive receives
+`on_ready`, then waits for its first activation before receiving `on_enable`.
+An active node receives `on_disable` before `on_exit_tree` during unmounting.
+These callbacks can use `resources()`, `input()` and application shortcuts under
+the same rules as other callbacks. Omitting `super` does not prevent internal
+deactivation.
+
+Activation callbacks and ECS state synchronize at safe points in the Nodes
+lifecycle. Multiple calls before a synchronization are coalesced to the final
+state. Disabling a branch during `on_process` prevents further `on_process`
+calls in that branch during the same pass. A call between updates is published
+at the next update, including while the application is paused.
+
+Inactive entities are excluded from `ECS.Query` and `World.entities()`. Custom
+systems using those queries therefore respect activation. Direct access to a
+known entity remains available; a system that deliberately includes disabled
+entities must explicitly respect their state.
+
 ## Pause game nodes
 
 The `process_mode` property uses `Application.ProcessMode`. By default,

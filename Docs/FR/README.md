@@ -109,11 +109,61 @@ class Player:Nodes.Node2D {
 
 Les Nodes fournis par le package sont statiques par défaut et ne reçoivent
 donc aucun callback par frame. Une classe définie par l’application participe
-automatiquement à `on_process` ; `set_process(false)` permet de la désactiver,
-et `set_process(true)` de la réactiver. Les propriétés modifiées pendant un
+automatiquement à `on_process` ; `set_process(false)` suspend ce callback,
+et `set_process(true)` le rétablit. Les propriétés modifiées pendant un
 même `on_process` sont regroupées avant leur publication dans l’ECS. Une
 modification effectuée hors callback est publiée au prochain cycle de mise à
 jour. Seuls les transforms descendants réellement affectés sont propagés.
+
+## Activer ou désactiver une branche
+
+`node.enable(false)` rend le nœud et ses descendants inactifs : leurs
+`on_process`, leurs animations et leur rendu s’arrêtent, et leurs corps
+physiques ne participent plus à la simulation ni aux requêtes spatiales.
+`node.enable(true)` réactive la branche. Un enfant explicitement désactivé
+reste désactivé, même lorsque son parent est réactivé.
+
+Ce fragment distingue l’objet entier de sa représentation visuelle :
+
+```sx
+var enemy = Nodes.Node("Enemy")
+var visual = Nodes.Canvas2D("Visual")
+enemy.add_child(visual)
+visual.enable(false) // Le comportement du parent reste actif.
+enemy.enable(false)  // Toute la branche devient inactive.
+enemy.enable(true)   // Visual reste désactivé.
+```
+
+Les objets restent dans l’arbre et conservent leurs entités, composants et
+réglages. La réactivation ne rappelle pas `on_ready`. La visibilité locale,
+`process_mode` et le réglage `set_process` restent inchangés. Un mode `always`
+ne contourne pas un ancêtre désactivé. La propriété `visible` des nœuds de
+rendu permet toujours de masquer leur affichage tout en laissant évoluer leurs
+animations et leur comportement.
+
+`is_enabled()` lit le choix local. `is_enabled_in_tree()` indique si le nœud
+est monté et actif compte tenu de ses ancêtres. L’héritage change immédiatement
+lors d’un appel à `enable` ou d’un changement de parent ; les composants restent
+modifiables pendant l’inactivité.
+
+Une sous-classe peut redéfinir `on_enable()` et `on_disable()`. Un nœud monté
+actif reçoit son premier `on_enable` après son `on_ready`. Un nœud monté inactif
+reçoit `on_ready`, puis attend sa première activation pour recevoir
+`on_enable`. Un nœud actif reçoit `on_disable` avant `on_exit_tree` au démontage.
+Ces callbacks disposent de `resources()`, `input()` et des raccourcis
+applicatifs selon les mêmes règles que les autres callbacks. Omettre `super`
+n’empêche pas la désactivation interne.
+
+Les callbacks d’activation et l’état ECS sont synchronisés aux points sûrs du
+cycle des Nodes. Plusieurs appels avant une même synchronisation sont regroupés
+selon l’état final. Désactiver une branche pendant `on_process` empêche ses
+nœuds de recevoir de nouveaux `on_process` dans ce passage. Un appel entre deux
+mises à jour est publié à la suivante, même si l’application est en pause.
+
+Les entités inactives sont exclues des `ECS.Query` et de `World.entities()`.
+Les systèmes personnalisés utilisant ces requêtes suivent donc l’activation.
+L’accès direct à une entité connue reste possible ; un système qui choisit de
+parcourir aussi les entités désactivées doit respecter explicitement leur état.
 
 ## Suspendre les nœuds du jeu
 

@@ -71,10 +71,12 @@ public class SceneTree {
             panic("SceneTree must be started before processing")
         }
         self.flush_mutations(world)
+        self.flush_synchronizations(world)
         let node_count = self.current_process_nodes.count()
         var index = 0
         while index < node_count {
             var node = self.current_process_nodes[index]
+            if node.can_process(self) { node.flush_synchronization(world) }
             if node.can_process(self) && node.is_processing() &&
                 node.processes_while(paused)
             {
@@ -163,10 +165,12 @@ public class SceneTree {
     }
 
     private func flush_synchronizations(world:&ECS.World) {
-        var pending = self.current_dirty_nodes
-        self.current_dirty_nodes = []
-        for var node in pending {
-            if node.can_process(self) { node.flush_synchronization(world) }
+        while !self.current_dirty_nodes.is_empty() {
+            var pending = self.current_dirty_nodes
+            self.current_dirty_nodes = []
+            for var node in pending {
+                if node.can_process(self) { node.flush_synchronization(world) }
+            }
         }
     }
 }

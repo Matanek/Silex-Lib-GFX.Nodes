@@ -1,0 +1,79 @@
+use GFX.Animation
+use GFX.Application
+use GFX.ECS
+use GFX.Nodes
+use GFX.Physics
+use GFX.Plugins
+use GFX.Scene2D
+use STD.Math
+
+class Animated:Nodes.Node2D {
+    init():super("Animated") {}
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        world.insert(entity, Animation.move_to(Math.Vec2(10.0, 0.0), 1.0).play()
+            ..process_mode = Application.ProcessMode.always)
+    }
+}
+
+class Physical:Nodes.Node2D {
+    init():super("Physical") {}
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        world.insert(entity, Physics.PhysicsBody2D(Physics.RigidBody2DSettings()
+            ..velocity = Math.Vec2(2.0, 0.0)
+            ..gravity_scale = 0.0
+            ..allow_sleep = false))
+    }
+}
+
+func fixed_delta(time:&Application.FrameTime) { time.delta = 0.25 }
+
+func tick(application:Application) {
+    application.run_schedule(Application.Schedule.pre_update)
+    application.run_schedule(Application.Schedule.update)
+    application.run_schedule(Application.Schedule.post_update)
+}
+
+test "branch activation suspends animation and physics while preserving their state" {
+    var root = Nodes.Node("Root")
+    var animated = Animated()
+    var physical = Physical()
+    root.add_child(animated)
+    root.add_child(physical)
+    var application = Application()
+        ..add_plugin(Plugins.Nodes(root))
+        ..add_plugin(Animation.Plugin())
+        ..add_plugin(Plugins.Physics2D(Plugins.Physics2D.Settings()
+            ..world = (Physics.World2DSettings()..gravity = Math.Vec2())
+            ..fixed_delta = 0.25))
+    application.prepare()
+    application.add_system(Application.Schedule.pre_update, fixed_delta,
+        process_mode:Application.ProcessMode.always)
+    application.run_schedule(Application.Schedule.startup)
+    tick(application)
+    var resources = application.resources()
+    var world = resources.get<ECS.World>()
+    var body = world.get<Physics.PhysicsBody2D>(physical.entity()!).body()!
+    var physics = resources.get<Physics.World2D>()
+    let ray = Physics.Ray2D(Math.Vec2(-2.0, 0.0), Math.Vec2(6.0, 0.0))
+    assert(physics.ray_cast_any(ray))
+    assert(Math.nearly_equal(body.position().x, 0.5))
+    assert(Math.nearly_equal(world.get<Scene2D.Transform>(animated.entity()!).position.x, 2.5))
+    root.enable(false)
+    for _ in 0...3 { tick(application) }
+    assert(body.is_valid() && !body.is_enabled())
+    assert(!physics.ray_cast_any(ray))
+    assert(Math.nearly_equal(body.position().x, 0.5))
+    assert(Math.nearly_equal(body.velocity().x, 2.0))
+    assert(Math.nearly_equal(world.get<Scene2D.Transform>(animated.entity()!).position.x, 2.5))
+    root.enable(true)
+    tick(application)
+    assert(body.is_valid() && body.is_enabled())
+    assert(physics.ray_cast_any(ray))
+    assert(Math.nearly_equal(body.position().x, 1.0))
+    assert(Math.nearly_equal(world.get<Scene2D.Transform>(animated.entity()!).position.x, 5.0))
+    assert(physical.ready_count() == 1 && animated.ready_count() == 1)
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(!body.is_valid())
+}

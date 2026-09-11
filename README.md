@@ -21,6 +21,11 @@ application input through `self.input()` in lifecycle callbacks. They access
 application and game resources through `self.resources()`, including
 `Application.Controller` to request shutdown with `stop()`.
 
+`enable(false)` deactivates an entire branch, including processing, rendering,
+animation and physics participation, while retaining its entities and settings.
+`enable(true)` restores the branch while preserving each child’s own choice.
+Subclasses can respond with `on_enable` and `on_disable`.
+
 Built-in nodes are static by default. Consumer subclasses participate in
 `on_process` automatically and can opt out with `set_process(false)`. Property
 changes are dirty-tracked: external changes synchronize on the next update,

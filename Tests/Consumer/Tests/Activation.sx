@@ -1,0 +1,163 @@
+use GFX.Application
+use GFX.ECS
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Scene2D
+use STD.Math
+
+class Actor:Nodes.Node {
+    var frames:int = 0
+    var enables:int = 0
+    var disables:int = 0
+    var exits:int = 0
+
+    init(name:str):super(name) {}
+
+    override func on_enable() {
+        assert(self.ready_count() > 0)
+        assert(self.is_enabled_in_tree())
+        assert(self.resources().has<ECS.World>())
+        self.enables++
+    }
+    override func on_disable() {
+        assert(self.is_inside_tree())
+        assert(self.resources().has<ECS.World>())
+        self.disables++
+    }
+    override func on_process(delta:float) { self.frames++ }
+    override func on_exit_tree() { self.exits++ }
+}
+
+test "disable a branch without losing identity child settings or visibility" {
+    var root = Actor("Root")
+    var active = Actor("Active")..set_process_mode(Application.ProcessMode.always)
+    var inactive = Actor("Inactive")..enable(false)
+    var visual = Nodes.Canvas2D("Visual")..visible = false
+    root.add_child(active)
+    root.add_child(inactive)
+    active.add_child(visual)
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    application.run_schedule(Application.Schedule.startup)
+    let identity = active.entity()!
+    assert(root.enables == 1 && active.enables == 1 && inactive.enables == 0)
+    application.run_schedule(Application.Schedule.update)
+    root.enable(false)
+    assert(active.is_enabled() && !active.is_enabled_in_tree())
+    application.run_schedule(Application.Schedule.update)
+    assert(root.frames == 1 && active.frames == 1 && inactive.frames == 0)
+    assert(root.disables == 1 && active.disables == 1 && inactive.disables == 0)
+    assert(root.child_count() == 2 && active.entity()! == identity)
+    assert(active.ready_count() == 1 && active.exits == 0)
+    {
+        var world = application.resources().get<ECS.World>()
+        assert(world.entities().is_empty())
+        assert(world.entities(include_disabled:true).count() == 4)
+        assert(world.is_alive(identity))
+    }
+    // Property edits remain available while inactive.
+    visual.position = Math.Vec2(12.0, 5.0)
+    application.run_schedule(Application.Schedule.update)
+    root.enable(true)
+    application.run_schedule(Application.Schedule.update)
+    assert(root.enables == 2 && active.enables == 2 && inactive.enables == 0)
+    assert(root.frames == 2 && active.frames == 2 && inactive.frames == 0)
+    assert(!inactive.is_enabled() && !visual.visible)
+    assert(active.entity()! == identity && active.ready_count() == 1)
+    {
+        var world = application.resources().get<ECS.World>()
+        assert(!world.get<Scene2D.Canvas>(visual.entity()!).visible)
+        assert(world.get<Scene2D.Transform>(visual.entity()!).position == visual.position)
+        assert(!world.is_enabled(inactive.entity()!))
+    }
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(active.disables == 2 && active.exits == 1 && inactive.disables == 0)
+}
+
+class Switch:Actor {
+    var target:Nodes.Node?
+    init():super("Switch") { self.target = null }
+    override func on_process(delta:float) {
+        if let target = self.target { target.enable(false) }
+    }
+}
+
+test "disable from a callback prevents later descendants from processing that frame" {
+    var root = Switch()
+    var child = Actor("Child")..set_process_mode(Application.ProcessMode.always)
+    root.add_child(child)
+    root.target = child
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    application.run_schedule(Application.Schedule.startup)
+    application.run_schedule(Application.Schedule.update)
+    assert(child.frames == 0 && child.disables == 1)
+    assert(!application.resources().get<ECS.World>().is_enabled(child.entity()!))
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "mounting reparenting and paused updates respect inherited activation" {
+    var root = Actor("Root")
+    var branch = Actor("Branch")..enable(false)
+    root.add_child(branch)
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    application.run_schedule(Application.Schedule.startup)
+    var child = Actor("Child")..set_process_mode(Application.ProcessMode.always)
+    branch.add_child(child)
+    {
+        var resources = application.resources()
+        var simulation = resources.get_mut<Application.Simulation>()
+        simulation.pause()
+    }
+    application.run_schedule(Application.Schedule.update)
+    assert(child.ready_count() == 1 && child.enables == 0 && child.frames == 0)
+    branch.enable(true)
+    application.run_schedule(Application.Schedule.update)
+    assert(child.enables == 1 && child.frames == 1 && branch.frames == 0)
+    branch.enable(false)
+    application.run_schedule(Application.Schedule.update)
+    branch.remove_child(child)
+    root.add_child(child)
+    application.run_schedule(Application.Schedule.update)
+    assert(child.ready_count() == 2 && child.enables == 2 && child.frames == 2)
+    assert(child.is_enabled_in_tree())
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+class SelfDisabling:Actor {
+    init():super("SelfDisabling") {}
+    override func on_enable() {
+        super.on_enable()
+        self.enable(false)
+    }
+}
+
+test "activation callbacks can change activation without leaving stale ECS state" {
+    var root = SelfDisabling()
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    application.run_schedule(Application.Schedule.startup)
+    application.run_schedule(Application.Schedule.update)
+    assert(root.enables == 1 && root.disables == 1 && root.frames == 0)
+    assert(!application.resources().get<ECS.World>().is_enabled(root.entity()!))
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+class ParentEditor:Actor {
+    init(name:str):super(name) {}
+    override func on_ready() {
+        // A later sibling flushes its parent's pending property changes.
+        // That synchronization must not enable the parent before its on_ready.
+        if let parent = self.parent() {
+            parent.enable(false)
+            parent.enable(true)
+        }
+    }
+}
+
+test "child ready edits do not deliver parent activation before parent ready" {
+    var root = Actor("Root")
+    root.add_child(ParentEditor("First"))
+    root.add_child(Actor("Second"))
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    application.run_schedule(Application.Schedule.startup)
+    assert(root.enables == 1 && root.ready_count() == 1)
+    application.run_schedule(Application.Schedule.shutdown)
+}

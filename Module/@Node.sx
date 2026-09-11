@@ -6,6 +6,40 @@ use STD.Text
 // Dimension-independent scene-tree identity and lifecycle.
 
 public class Node {
+    private var current_enabled:bool = true
+    private var effective_enabled:bool = true
+    private var activation_notified:bool = false
+    private var activation_ready:bool = false
+
+    func enable(state:bool) {
+        if self.current_enabled == state { return }
+        self.current_enabled = state
+        self.refresh_enabled()
+    }
+
+    func is_enabled() bool { return self.current_enabled }
+    func is_enabled_in_tree() bool {
+        return self.current_inside_tree && !self.pending_detachment && self.effective_enabled
+    }
+
+    private func refresh_enabled() {
+        var enabled = self.current_enabled
+        if let parent = self.current_parent { enabled = enabled && parent.effective_enabled }
+        if self.effective_enabled == enabled { return }
+        self.effective_enabled = enabled
+        self.changed()
+        var children = self.current_children
+        for var child in children { child.refresh_enabled() }
+    }
+
+    private func synchronize_activation(world:&ECS.World) {
+        world.enable(self.current_entity!, self.effective_enabled)
+        if !self.activation_ready || self.activation_notified == self.effective_enabled { return }
+        self.activation_notified = self.effective_enabled
+        if self.activation_notified { self.on_enable() }
+        else { self.on_disable() }
+    }
+
     private var current_process_mode:Application.ProcessMode = Application.ProcessMode.inherit
     private var effective_process_mode:Application.ProcessMode = Application.ProcessMode.pausable
 
@@ -30,7 +64,7 @@ public class Node {
     }
 
     module func processes_while(paused:bool) bool {
-        return Application.should_process(self.effective_process_mode, paused)
+        return self.effective_enabled && Application.should_process(self.effective_process_mode, paused)
     }
 
     private let current_name:str
@@ -118,6 +152,7 @@ public class Node {
         }
         child.current_parent = self
         child.refresh_process_mode()
+        child.refresh_enabled()
         self.current_children.append(child)
         if let tree = self.destination_tree() {
             tree.register_attachment(child)
@@ -132,6 +167,7 @@ public class Node {
                 var removed = self.current_children.take(index)
                 removed.current_parent = null
                 removed.refresh_process_mode()
+                removed.refresh_enabled()
                 if let tree = removed.current_tree {
                     removed.suspend_subtree()
                     tree.register_detachment(removed)
@@ -246,6 +282,8 @@ public class Node {
         return self.current_tree!.input()
     }
 
+    protected func on_enable() {}
+    protected func on_disable() {}
     protected func on_ready() {}
     protected func on_process(delta:float) {}
     protected func on_exit_tree() {}
@@ -277,6 +315,7 @@ public class Node {
             self.current_process_registered = true
         }
         self.mount_components(world, entity)
+        world.enable(entity, self.effective_enabled)
 
         var children = self.current_children
         for var child in children {
@@ -286,7 +325,11 @@ public class Node {
                 child.mount_subtree(world, tree)
             }
         }
-        if !self.pending_detachment { self.ready() }
+        if !self.pending_detachment {
+            self.ready()
+            self.activation_ready = true
+            self.synchronize_activation(world)
+        }
         self.flush_synchronization(world)
     }
 
@@ -308,6 +351,7 @@ public class Node {
         self.current_dirty = false
         self.current_synchronization_registered = false
         self.synchronize(world, self.current_entity!)
+        self.synchronize_activation(world)
     }
 
     module func unmount_subtree(world:&ECS.World) {
@@ -316,6 +360,12 @@ public class Node {
         var children = self.mounted_children
         for var child in children {
             child.unmount_subtree(world)
+        }
+        self.activation_ready = false
+        world.enable(self.current_entity!, false)
+        if self.activation_notified {
+            self.activation_notified = false
+            self.on_disable()
         }
         self.exit_tree()
         world.destroy(self.current_entity!)

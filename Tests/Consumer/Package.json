@@ -8,6 +8,10 @@
     "GFX.ECS": "^0.2.0",
     "GFX.Scene2D": "^0.3.0",
     "GFX.Scene3D": "^0.3.0",
-    "STD": "^0.22.0"
+    "STD": "^0.22.0",
+    "GFX.Animation": "^0.4.0",
+    "GFX.Physics": "^0.6.0",
+    "GFX.Rendering": "^0.4.0",
+    "GFX.Assets": "^0.3.0"
   }
 }
