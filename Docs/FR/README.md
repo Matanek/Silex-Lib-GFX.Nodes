@@ -168,3 +168,40 @@ mais ne créent pas de nouvelles entités.
 Les cycles, les noms identiques parmi les enfants d’un même parent et l’ajout
 d’un nœud ayant déjà un parent restent interdits. La racine d’un arbre monté
 ne peut pas devenir l’enfant d’un autre nœud.
+
+## Lire les entrées depuis un nœud
+
+Dans `on_process(delta)`, `self.input()` donne un accès en lecture à
+`GFX.Input.State`, actualisé par l’application pendant `pre_update`. La méthode
+protégée est aussi disponible dans `on_ready` et `on_exit_tree`. Installer
+`Plugins.Input()` avant `Plugins.Nodes`, ou utiliser `Plugins.Window()` qui
+installe déjà les entrées. Un arbre sans input reste utilisable tant qu’aucun
+nœud n’appelle `input()`.
+
+Ce fragment déplace un nœud 2D tant que la touche droite est maintenue :
+
+```sx
+use GFX.Input
+use GFX.Nodes
+use STD.Math
+
+class Player:Nodes.Node2D {
+    override func on_process(delta:float) {
+        let right = self.input().is_down(Input.Key.d)
+        if right {
+            self.position = self.position.add(Math.Vec2(260.0 * delta, 0.0))
+        }
+    }
+}
+```
+
+`is_down` teste une touche maintenue ; `is_pressed` et `is_released` testent
+les transitions de la frame. `Input.Key` représente les positions physiques du
+clavier : `w`, `a`, `s`, `d` correspondent aux touches ZQSD d’un clavier AZERTY.
+
+Le résultat `@Input.State` est un emprunt en lecture : ne pas le conserver
+au-delà du callback. Pour lire plusieurs touches dans une variable `input`,
+limiter son emprunt à un bloc, puis modifier le nœud après ce bloc. Aucun appel
+à `Input.update()` n’est nécessaire. Après un changement d’arbre, `input()`
+lit automatiquement l’état de l’application de destination. Un appel sur un
+nœud démonté ou sans état d’input disponible produit une erreur explicite.

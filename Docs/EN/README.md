@@ -164,3 +164,40 @@ the stopping tree change the object hierarchy but create no new entities.
 
 Cycles, duplicate sibling names and adding a node that already has a parent
 remain forbidden. A mounted tree root cannot become another node's child.
+
+## Read input from a node
+
+Inside `on_process(delta)`, `self.input()` provides read access to
+`GFX.Input.State`, updated by the application during `pre_update`. This
+protected method is also available in `on_ready` and `on_exit_tree`. Install
+`Plugins.Input()` before `Plugins.Nodes`, or use `Plugins.Window()`, which
+already installs input. Trees without input remain usable as long as no node
+calls `input()`.
+
+This fragment moves a 2D node while the rightward key is held:
+
+```sx
+use GFX.Input
+use GFX.Nodes
+use STD.Math
+
+class Player:Nodes.Node2D {
+    override func on_process(delta:float) {
+        let right = self.input().is_down(Input.Key.d)
+        if right {
+            self.position = self.position.add(Math.Vec2(260.0 * delta, 0.0))
+        }
+    }
+}
+```
+
+`is_down` tests a held key; `is_pressed` and `is_released` test transitions
+within the current frame. `Input.Key` represents physical keyboard positions:
+`w`, `a`, `s`, `d` correspond to the ZQSD keys on an AZERTY keyboard.
+
+The `@Input.State` result is a read borrow: do not retain it beyond the
+callback. To read several keys through an `input` variable, limit its borrow
+to a block, then mutate the node after that block. No call to `Input.update()`
+is needed. After moving to another tree, `input()` automatically reads the
+destination application's state. Calling it on an unmounted node or without
+an available input state produces an explicit error.

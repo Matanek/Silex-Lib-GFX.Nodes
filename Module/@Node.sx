@@ -1,4 +1,5 @@
 use GFX.ECS
+use GFX.Input
 use STD.Text
 
 // Dimension-independent scene-tree identity and lifecycle.
@@ -172,6 +173,13 @@ public class Node {
     private func exit_tree() {
         self.on_exit_tree()
         self.current_inside_tree = false
+    }
+
+    protected func input() @Input.State {
+        if self.current_tree == null {
+            panic("Node input is only available while mounted in a SceneTree")
+        }
+        return self.current_tree!.input()
     }
 
     protected func on_ready() {}

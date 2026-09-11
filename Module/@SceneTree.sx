@@ -1,6 +1,9 @@
 use GFX.ECS
+use GFX.Application
+use GFX.Input
 
 public class SceneTree {
+    private var current_resources:Application.Resources? = null
     private var current_root:Node
     private var current_running:bool
     private var current_frame:int
@@ -20,6 +23,10 @@ public class SceneTree {
     func root() Node { return self.current_root }
     func is_running() bool { return self.current_running }
     func frame() int { return self.current_frame }
+
+    module func bind_resources(resources:Application.Resources) {
+        self.current_resources = resources
+    }
 
     module func start(world:&ECS.World) {
         if self.current_running { panic("SceneTree is already running") }
@@ -62,6 +69,16 @@ public class SceneTree {
         self.current_dirty_nodes.clear()
         self.pending_attachments.clear()
         self.pending_detachments.clear()
+    }
+
+    module func input() @Input.State {
+        if self.current_resources == null {
+            panic("Node input is only available while its SceneTree is mounted")
+        }
+        if !self.current_resources!.has<Input.State>() {
+            panic("Node input requires Plugins.Input or Plugins.Window before Plugins.Nodes")
+        }
+        return self.current_resources!.get<Input.State>()
     }
 
     module func register_attachment(node:Node) {

@@ -1,0 +1,104 @@
+use GFX.Application
+use GFX.Input
+use GFX.Nodes
+use GFX.Plugins
+
+class Controlled:Nodes.Node {
+    var held:bool = false
+    var pressed:bool = false
+    var released:bool = false
+    var ready_had_input:bool = false
+    var exit_had_input:bool = false
+
+    init(name:str = "Controlled"):super(name) {}
+
+    override func on_ready() {
+        let available = !self.input().is_quit_requested()
+        let held = self.input().is_down(Input.Key.w)
+        self.ready_had_input = available
+        self.held = held
+    }
+
+    override func on_process(delta:float) {
+        let held = self.input().is_down(Input.Key.w)
+        let pressed = self.input().is_pressed(Input.Key.w)
+        let released = self.input().is_released(Input.Key.w)
+        self.held = held
+        self.pressed = pressed
+        self.released = released
+    }
+
+    override func on_exit_tree() {
+        let available = !self.input().is_quit_requested()
+        self.exit_had_input = available
+    }
+}
+
+test "nodes observe the current input state throughout their mounted lifecycle" {
+    var root = Controlled("Root")
+    var application = Application()
+        ..add_plugin(Plugins.Input())
+        ..add_plugin(Plugins.Nodes(root))
+    application.prepare()
+    application.run_schedule(Application.Schedule.startup)
+    assert(root.ready_had_input)
+    assert(!root.held)
+
+    // Seed the public state to exercise callbacks without keyboard focus.
+    {
+        var resources = application.resources()
+        var input = resources.get_mut<Input.State>()
+        input.current_keys = [Input.Key.w]
+        input.entered_keys = [Input.Key.w]
+    }
+    var child = Controlled("Child")
+    root.add_child(child)
+    application.run_schedule(Application.Schedule.update)
+    assert(root.held && root.pressed && !root.released)
+    assert(child.ready_had_input && child.held && child.pressed)
+
+    {
+        var resources = application.resources()
+        var input = resources.get_mut<Input.State>()
+        input.current_keys = []
+        input.entered_keys = []
+        input.released_keys = [Input.Key.w]
+    }
+    application.run_schedule(Application.Schedule.update)
+    assert(!root.held && !root.pressed && root.released)
+    assert(!child.held && !child.pressed && child.released)
+    application.run_schedule(Application.Schedule.shutdown)
+    assert(root.exit_had_input && child.exit_had_input)
+}
+
+test "reparented nodes read the input of their destination application" {
+    var first_root = Nodes.Node("First")
+    var second_root = Nodes.Node("Second")
+    var player = Controlled()
+    first_root.add_child(player)
+    var first = Application()
+        ..add_plugin(Plugins.Input())
+        ..add_plugin(Plugins.Nodes(first_root))
+    var second = Application()
+        ..add_plugin(Plugins.Input())
+        ..add_plugin(Plugins.Nodes(second_root))
+    first.prepare()
+    second.prepare()
+    first.run_schedule(Application.Schedule.startup)
+    second.run_schedule(Application.Schedule.startup)
+    {
+        var resources = first.resources()
+        var input = resources.get_mut<Input.State>()
+        input.current_keys = [Input.Key.w]
+    }
+    first.run_schedule(Application.Schedule.update)
+    assert(player.held)
+    first_root.remove_child(player)
+    second_root.add_child(player)
+    first.run_schedule(Application.Schedule.update)
+    second.run_schedule(Application.Schedule.update)
+    assert(!player.held)
+    assert(player.ready_count() == 2)
+    first.run_schedule(Application.Schedule.shutdown)
+    second.run_schedule(Application.Schedule.shutdown)
+}

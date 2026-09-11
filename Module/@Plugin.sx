@@ -13,7 +13,9 @@ public struct Plugin:Application.Plugin {
     func build(application:&Application) {
         application.add_plugin(ECS.Plugin())
         application.add_plugin(Application.Time())
-        application.add_resource(SceneTree(self.root_node))
+        var tree = SceneTree(self.root_node)
+        tree.bind_resources(application.resources())
+        application.add_resource(tree)
         application.add_system(Application.Schedule.startup, start_nodes)
         application.add_system(Application.Schedule.update, update_nodes)
         application.add_system(Application.Schedule.shutdown, stop_nodes)
