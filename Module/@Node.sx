@@ -1,3 +1,4 @@
+use GFX.Application
 use GFX.ECS
 use GFX.Input
 use STD.Text
@@ -173,6 +174,13 @@ public class Node {
     private func exit_tree() {
         self.on_exit_tree()
         self.current_inside_tree = false
+    }
+
+    protected func resources() Application.Resources {
+        if self.current_tree == null {
+            panic("Node resources are only available while mounted in a SceneTree")
+        }
+        return self.current_tree!.resources()
     }
 
     protected func input() @Input.State {

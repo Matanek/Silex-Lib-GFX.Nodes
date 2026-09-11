@@ -201,3 +201,53 @@ to a block, then mutate the node after that block. No call to `Input.update()`
 is needed. After moving to another tree, `input()` automatically reads the
 destination application's state. Calling it on an unmounted node or without
 an available input state produces an explicit error.
+
+## Access resources and quit the game
+
+`self.resources()` provides the current application context's resources from
+`on_ready`, `on_process`, and `on_exit_tree`. Use `get<T>()` to borrow a
+resource for reading and `get_mut<T>()` to modify it. Game resources are
+available in the same way as GFX resources.
+
+This program closes the window when Escape is pressed:
+
+```sx
+use GFX.Application
+use GFX.Input
+use GFX.Nodes
+use GFX.Plugins
+
+class Root:Nodes.Node {
+    override func on_process(delta:float) {
+        let quit = self.input().is_pressed(Input.Key.escape)
+        if quit {
+            var resources = self.resources()
+            var controller = resources.get_mut<Application.Controller>()
+            controller.stop()
+        }
+    }
+}
+
+func main() {
+    Application()
+        ..add_plugin(Plugins.Window())
+        ..add_plugin(Plugins.Nodes(Root()))
+        ..run()
+}
+```
+
+`stop()` requests loop termination; node exit callbacks then run. Inside a
+Bundle, the node accesses that Bundle's local resources, with the usual
+fallback to parent resources. Its controller stops only the Bundle. After a
+node moves to another tree, callbacks use the destination context's resources.
+
+Retrieve resources in each callback that needs them and keep borrows within
+that callback. Calling `resources()` outside a lifecycle pass or on an
+unmounted node produces an explicit error. `get` and `get_mut` retain their
+usual error when a resource is missing; `try_get` and `try_get_mut` allow
+handling its absence.
+
+Callbacks do not overlap parallel systems in the same context because their
+resource accesses are chosen dynamically. `SceneTree` and `ECS.World` are
+already in use by node processing: do not replace them, remove them, or clear
+the store during a callback. Use node methods to modify the tree.

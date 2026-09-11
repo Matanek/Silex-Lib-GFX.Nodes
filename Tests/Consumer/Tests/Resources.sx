@@ -1,0 +1,167 @@
+use GFX.Application
+use GFX.Nodes
+use GFX.Plugins
+
+struct GameState {
+    var value:int = 0
+    var ready:int = 0
+    var updates:int = 0
+    var exits:int = 0
+}
+
+class ResourceReader:Nodes.Node {
+    var observed:int = 0
+
+    override func on_ready() {
+        var resources = self.resources()
+        var state = resources.get_mut<GameState>()
+        state.ready++
+        self.observed = state.value
+    }
+
+    override func on_process(delta:float) {
+        var resources = self.resources()
+        var state = resources.get_mut<GameState>()
+        state.updates++
+        self.observed = state.value
+    }
+
+    override func on_exit_tree() {
+        var resources = self.resources()
+        var state = resources.get_mut<GameState>()
+        state.exits++
+        self.observed = state.value
+    }
+}
+
+test "nodes access current resources throughout their mounted lifecycle" {
+    var root = ResourceReader()
+    var application = Application()
+        ..add_resource(GameState(value:12))
+        ..add_plugin(Plugins.Nodes(root))
+    application.run_schedule(Application.Schedule.startup)
+    assert(root.observed == 12)
+    var resources = application.resources()
+    {
+        var state = resources.get_mut<GameState>()
+        state.value = 42
+    }
+    application.run_schedule(Application.Schedule.update)
+    assert(root.observed == 42)
+    application.run_schedule(Application.Schedule.shutdown)
+    let state = resources.get<GameState>()
+    assert(state.ready == 1 && state.updates == 1 && state.exits == 1)
+    assert(!root.is_inside_tree())
+}
+
+class Quitter:Nodes.Node {
+    var frames:int = 0
+    var exited:bool = false
+
+    override func on_process(delta:float) {
+        self.frames++
+        var resources = self.resources()
+        var controller = resources.get_mut<Application.Controller>()
+        controller.stop()
+    }
+
+    override func on_exit_tree() {
+        assert(self.resources().has<Application.Controller>())
+        self.exited = true
+    }
+}
+
+// Check the actual controller before stopping defensively to bound the run.
+func verify_stopped(application:Application) {
+    let stopped = !application.is_running()
+    application.stop()
+    assert(stopped)
+}
+
+test "a node stops its application through the controller resource" {
+    var root = Quitter()
+    var application = Application()
+        ..add_plugin(Plugins.Nodes(root))
+    application.prepare()
+    application.add_after_system(Application.Schedule.update, verify_stopped)
+    assert(application.run() == 0)
+    assert(root.frames == 1 && root.exited)
+    assert(!application.is_running())
+}
+
+test "reparented nodes use their destination resources including exit callbacks" {
+    var first_root = Nodes.Node("First")
+    var second_root = Nodes.Node("Second")
+    var reader = ResourceReader()
+    first_root.add_child(reader)
+    var first = Application()
+        ..add_resource(GameState(value:1))
+        ..add_plugin(Plugins.Nodes(first_root))
+    var second = Application()
+        ..add_resource(GameState(value:2))
+        ..add_plugin(Plugins.Nodes(second_root))
+    first.run_schedule(Application.Schedule.startup)
+    second.run_schedule(Application.Schedule.startup)
+    assert(reader.observed == 1)
+    first_root.remove_child(reader)
+    second_root.add_child(reader)
+    first.run_schedule(Application.Schedule.update)
+    assert(reader.observed == 1)
+    second.run_schedule(Application.Schedule.update)
+    assert(reader.observed == 2)
+    first.run_schedule(Application.Schedule.shutdown)
+    second.run_schedule(Application.Schedule.shutdown)
+    let first_state = first.resources().get<GameState>()
+    let second_state = second.resources().get<GameState>()
+    assert(first_state.ready == 1 && first_state.exits == 1)
+    assert(second_state.ready == 1 && second_state.exits == 1)
+    assert(reader.ready_count() == 2)
+}
+
+struct ParentSetting { let value:int }
+
+class ScopedQuitter:Quitter {
+    override func on_ready() {
+        var resources = self.resources()
+        assert(resources.get<GameState>().value == 7)
+        assert(resources.get<ParentSetting>().value == 42)
+    }
+}
+
+func verify_parent_running(application:Application) {
+    let running = application.is_running()
+    var resources = application.resources()
+    let bundle_stopped = !resources.get<Application.Bundle>().is_running()
+    application.stop()
+    assert(running && bundle_stopped)
+}
+
+test "node resources use the Bundle scope and stop only its controller" {
+    var root = ScopedQuitter()
+    var application = Application()
+        ..add_resource(GameState(value:1))
+        ..add_resource(ParentSetting(value:42))
+    var bundle = Application.Bundle(application)
+        ..add_resource(GameState(value:7))
+        ..add_plugin(Plugins.Nodes(root))
+    application
+        ..add_resource(bundle)
+        ..add_plugin(Application.BundleManager(bundle))
+        ..add_after_system(Application.Schedule.update, verify_parent_running)
+    assert(application.run() == 0)
+    assert(root.frames == 1 && root.exited)
+}
+
+func observe_node_update(state:@GameState, controller:&Application.Controller) {
+    assert(state.updates == 1)
+    controller.stop()
+}
+
+test "typed systems observe node resource writes with multiple workers" {
+    var application = Application(2)
+        ..add_resource(GameState())
+        ..add_plugin(Plugins.Nodes(ResourceReader()))
+    application.prepare()
+    application.add_system(Application.Schedule.update, observe_node_update)
+    assert(application.run() == 0)
+}

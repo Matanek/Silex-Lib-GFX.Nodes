@@ -17,7 +17,9 @@ scene components, while `Canvas2D` owns vector drawing commands backed by
 Children can be added, removed and reparented at runtime, including from
 lifecycle callbacks. Object links change immediately; ECS mounting and teardown
 are applied at safe points around node processing. Subclasses read the current
-application input through `self.input()` in lifecycle callbacks.
+application input through `self.input()` in lifecycle callbacks. They access
+application and game resources through `self.resources()`, including
+`Application.Controller` to request shutdown with `stop()`.
 
 Built-in nodes are static by default. Consumer subclasses participate in
 `on_process` automatically and can opt out with `set_process(false)`. Property

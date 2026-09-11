@@ -1,6 +1,7 @@
 use GFX.Application
 use GFX.ECS
 use GFX.Input
+use Interop.C
 
 public struct Plugin:Application.Plugin {
     private var root_node:Node
@@ -32,20 +33,47 @@ func bind_node_input(application:Application) {
     tree.bind_input(input)
 }
 
-func start_nodes(tree:&SceneTree, world:&ECS.World) {
+// Node callbacks may access arbitrary resources. Application callbacks declare
+// that broad access to the scheduler, so they cannot overlap typed systems.
+// Each store handle is shared, not copied storage. Separate handles give the
+// tree and World independent lexical borrows under the current root-based
+// borrow rules; they can be merged when Resources supports disjoint slot borrows.
+func start_nodes(application:Application) {
+    var resources = application.resources()
+    var world_resources = application.resources()
+    let resources_address = C.object_address(resources)
+    var tree = resources.get_mut<SceneTree>()
+    var world = world_resources.get_mut<ECS.World>()
+    tree.begin_callbacks(resources_address)
     tree.start(world)
+    tree.end_callbacks()
 }
 
-func update_nodes(
-    time:@Application.FrameTime,
-    tree:&SceneTree,
-    world:&ECS.World
-) {
-    tree.process(time.delta, world)
+func update_nodes(application:Application) {
+    var resources = application.resources()
+    var world_resources = application.resources()
+    let resources_address = C.object_address(resources)
+    var delta = 0.0
+    {
+        let time = resources.get<Application.FrameTime>()
+        delta = time.delta
+    }
+    var tree = resources.get_mut<SceneTree>()
+    var world = world_resources.get_mut<ECS.World>()
+    tree.begin_callbacks(resources_address)
+    tree.process(delta, world)
+    tree.end_callbacks()
 }
 
-func stop_nodes(tree:&SceneTree, world:&ECS.World) {
+func stop_nodes(application:Application) {
+    var resources = application.resources()
+    var world_resources = application.resources()
+    let resources_address = C.object_address(resources)
+    var tree = resources.get_mut<SceneTree>()
+    var world = world_resources.get_mut<ECS.World>()
+    tree.begin_callbacks(resources_address)
     tree.stop(world)
+    tree.end_callbacks()
 }
 
 contribute GFX.Plugins {

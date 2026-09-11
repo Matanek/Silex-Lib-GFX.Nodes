@@ -205,3 +205,56 @@ limiter son emprunt à un bloc, puis modifier le nœud après ce bloc. Aucun app
 à `Input.update()` n’est nécessaire. Après un changement d’arbre, `input()`
 lit automatiquement l’état de l’application de destination. Un appel sur un
 nœud démonté ou sans état d’input disponible produit une erreur explicite.
+
+## Accéder aux ressources et quitter le jeu
+
+`self.resources()` donne accès aux ressources du contexte applicatif courant
+depuis `on_ready`, `on_process` et `on_exit_tree`. Utiliser `get<T>()` pour
+emprunter une ressource en lecture et `get_mut<T>()` pour la modifier. Les
+ressources propres au jeu sont accessibles de la même manière que celles de
+GFX.
+
+Ce programme ferme la fenêtre à l’appui sur Échap :
+
+```sx
+use GFX.Application
+use GFX.Input
+use GFX.Nodes
+use GFX.Plugins
+
+class Root:Nodes.Node {
+    override func on_process(delta:float) {
+        let quit = self.input().is_pressed(Input.Key.escape)
+        if quit {
+            var resources = self.resources()
+            var controller = resources.get_mut<Application.Controller>()
+            controller.stop()
+        }
+    }
+}
+
+func main() {
+    Application()
+        ..add_plugin(Plugins.Window())
+        ..add_plugin(Plugins.Nodes(Root()))
+        ..run()
+}
+```
+
+`stop()` demande l’arrêt de la boucle ; les callbacks de sortie des nœuds sont
+ensuite exécutés. Dans un Bundle, le nœud accède aux ressources locales de ce
+Bundle, avec le repli habituel vers les ressources parentes. Son contrôleur
+arrête uniquement le Bundle. Après un changement d’arbre, les callbacks
+utilisent les ressources du contexte de destination.
+
+Récupérer les ressources dans chaque callback qui en a besoin et garder les
+emprunts dans ce callback. Un appel à `resources()` hors d’un passage de cycle
+de vie, ou sur un nœud démonté, produit une erreur explicite. `get` et
+`get_mut` conservent leur erreur habituelle lorsqu’une ressource manque ;
+`try_get` et `try_get_mut` permettent de traiter son absence.
+
+Les callbacks s’exécutent sans chevauchement avec les systèmes parallèles du
+même contexte, puisque les ressources auxquelles ils accèdent sont choisies
+dynamiquement. `SceneTree` et `ECS.World` sont déjà utilisés par le traitement
+des nœuds : ne pas les remplacer, les retirer ou vider le magasin pendant un
+callback. Pour modifier l’arbre, utiliser les méthodes des nœuds.
