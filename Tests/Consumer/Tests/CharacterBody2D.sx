@@ -1,0 +1,279 @@
+use GFX.Application
+use GFX.ECS
+use GFX.Nodes
+use GFX.Physics
+use GFX.Plugins
+use GFX.Scene2D
+use STD.Math
+
+class Player:Nodes.CharacterBody2D {
+    var steps:int = 0
+    var collisions:int = 0
+
+    init(name:str = "Player", mask:uint64 = 0xffff_ffff_ffff_ffff):super(
+        Physics.CharacterMover2DSettings()..query_filter = Physics.QueryFilter2D(mask_bits:mask),
+        name
+    ) {}
+
+    override func on_physics_process(delta:float) {
+        assert(Math.nearly_equal(delta, 0.1, 0.00001))
+        self.steps++
+        if self.move_and_slide() { self.collisions++ }
+    }
+}
+
+func application(root:Nodes.Node, nodes_first:bool = false) Application {
+    var app = Application()
+    if nodes_first { app.add_plugin(Plugins.Nodes(root)) }
+    app.add_plugin(Plugins.Physics2D(Plugins.Physics2D.Settings()
+        ..world = (Physics.World2DSettings()..gravity = Math.Vec2())
+        ..fixed_delta = 0.1
+        ..maximum_catch_up_steps = 2
+        ..scene_units_per_meter = 100.0
+    ))
+    if !nodes_first { app.add_plugin(Plugins.Nodes(root)) }
+    app.run_schedule(Application.Schedule.startup)
+    return app
+}
+
+func frame(app:Application, delta:float) {
+    {
+        var resources = app.resources()
+        var time = resources.get_mut<Application.FrameTime>()
+        time.delta = delta
+    }
+    app.run_schedule(Application.Schedule.update)
+    app.run_schedule(Application.Schedule.post_update)
+}
+
+func wall(name:str = "Wall") Nodes.StaticBody2D {
+    return Nodes.StaticBody2D(
+        Physics.Shape2D.box(Physics.Box2D(Math.Vec2(0.5, 20.0))), name
+    )..position = Math.Vec2(225.0, 0.0)
+}
+
+test "fixed steps slide a visible character along a wall and correct its velocity" {
+    var root = Nodes.Node("Root")
+    var player = Player()..velocity = Math.Vec2(2000.0, 100.0)
+    var visual = Nodes.Node2D("Visual")..position = Math.Vec2(5.0, 2.0)
+    player.add_child(visual)
+    root.add_child(player)
+    root.add_child(wall())
+    var app = application(root)
+    frame(app, 0.1)
+    assert(player.steps == 1 && player.collisions == 1)
+    assert(player.position.x > 168.0 && player.position.x < 171.0)
+    assert(Math.nearly_equal(player.position.y, 10.0, 0.1))
+    assert(Math.abs(player.velocity.x) < 0.01)
+    assert(Math.nearly_equal(player.velocity.y, 100.0, 0.01))
+    assert(player.motion()!.colliders().count() == 1)
+    {
+        var world = app.resources().get<ECS.World>()
+        let pose = world.get<Scene2D.Transform>(visual.entity()!).position
+        assert(pose.nearly_equal(player.position.add(visual.position), 0.0001))
+        var body = world.get<Physics.PhysicsBody2D>(player.entity()!).body()!
+        assert(body.position().multiply(100.0).nearly_equal(player.position, 0.0001))
+    }
+    app.run_schedule(Application.Schedule.shutdown)
+    assert(app.resources().get<Physics.World2D>().body_count() == 0)
+}
+
+test "share the fixed accumulator in either plugin order without self collision" {
+    for nodes_first in [false, true] {
+        var player = Player()..velocity = Math.Vec2(100.0, 0.0)
+        var app = application(player, nodes_first)
+        frame(app, 0.05)
+        assert(player.steps == 0 && player.position == Math.Vec2())
+        frame(app, 0.31)
+        assert(player.steps == 2 && player.collisions == 0)
+        assert(player.position.nearly_equal(Math.Vec2(20.0, 0.0), 0.001))
+        frame(app, 0.0)
+        assert(player.steps == 3)
+        assert(player.position.nearly_equal(Math.Vec2(30.0, 0.0), 0.001))
+        app.run_schedule(Application.Schedule.shutdown)
+    }
+}
+
+test "correct velocity even when a cast ends exactly on the wall" {
+    var root = Nodes.Node("Root")
+    var player = Player()..velocity = Math.Vec2(1700.0, 0.0)
+    root.add_child(player)
+    root.add_child(wall())
+    var app = application(root)
+    frame(app, 0.1)
+    assert(player.position.x < 170.1)
+    assert(Math.abs(player.velocity.x) < 0.01)
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+test "pause and disable preserve character state and remove collision participation" {
+    var root = Nodes.Node("Root")
+    var player = Player()..velocity = Math.Vec2(100.0, 0.0)
+    root.add_child(player)
+    var obstacle = wall()
+    root.add_child(obstacle)
+    var app = application(root)
+    frame(app, 0.1)
+    var body = app.resources().get<ECS.World>().get<Physics.PhysicsBody2D>(player.entity()!).body()!
+    {
+        var resources = app.resources()
+        var simulation = resources.get_mut<Application.Simulation>()
+        simulation.pause()
+    }
+    player.enable(false)
+    frame(app, 10.0)
+    assert(player.steps == 1 && !body.is_enabled())
+    assert(player.position.nearly_equal(Math.Vec2(10.0, 0.0), 0.001))
+    player.enable(true)
+    obstacle.enable(false)
+    frame(app, 10.0)
+    assert(body.is_enabled() && player.steps == 1)
+    {
+        var resources = app.resources()
+        var simulation = resources.get_mut<Application.Simulation>()
+        simulation.resume()
+    }
+    player.velocity = Math.Vec2(3000.0, 0.0)
+    frame(app, 0.1)
+    assert(player.steps == 2 && player.position.x > 300.0)
+    root.remove_child(player)
+    frame(app, 0.1)
+    assert(!body.is_valid())
+    root.add_child(player)
+    frame(app, 0.1)
+    assert(player.ready_count() == 2 && player.steps == 3)
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+test "character shape is visible to other characters and collision masks filter walls" {
+    var root = Nodes.Node("Root")
+    var first = Player("First")..velocity = Math.Vec2(3000.0, 0.0)
+    var second = Player("Second")..position = Math.Vec2(150.0, 0.0)
+    second.set_physics_process(false)
+    root.add_child(first)
+    root.add_child(second)
+    var app = application(root)
+    frame(app, 0.1)
+    assert(first.position.x > 88.0 && first.position.x < 91.0)
+    assert(first.collisions == 1 && second.steps == 0)
+    app.run_schedule(Application.Schedule.shutdown)
+
+    var filtered_root = Nodes.Node("Root")
+    var filtered = Player("Filtered", 2)..velocity = Math.Vec2(3000.0, 0.0)
+    filtered_root.add_child(filtered)
+    filtered_root.add_child(wall())
+    var filtered_app = application(filtered_root)
+    frame(filtered_app, 0.1)
+    assert(filtered.position.x > 299.0 && filtered.collisions == 0)
+    filtered_app.run_schedule(Application.Schedule.shutdown)
+}
+
+test "world motion is converted back into the local transform under a spatial parent" {
+    var root = Nodes.Node2D("Root")..position = Math.Vec2(20.0, 40.0)
+    root.rotation = Math.pi() * 0.5
+    var player = Player()..rotation = -root.rotation
+    player.velocity = Math.Vec2(100.0, 0.0)
+    root.add_child(player)
+    var app = application(root)
+    frame(app, 0.1)
+    assert(player.position.nearly_equal(Math.Vec2(0.0, -10.0), 0.001))
+    var pose = app.resources().get<ECS.World>().get<Scene2D.Transform>(player.entity()!)
+    assert(pose.position.nearly_equal(Math.Vec2(30.0, 40.0), 0.001))
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+class IntegratedPlayer:Player {
+    override func on_physics_process(delta:float) {
+        self.steps++
+        self.move_and_slide(Math.Vec2(17.0, 0.0))
+    }
+}
+
+test "accept an explicitly integrated displacement and recover an initial overlap" {
+    var player = IntegratedPlayer()
+    var app = application(player)
+    frame(app, 0.1)
+    assert(player.position.nearly_equal(Math.Vec2(17.0, 0.0), 0.001))
+    app.run_schedule(Application.Schedule.shutdown)
+
+    var root = Nodes.Node("Root")
+    var overlapping = Player()..position = Math.Vec2(190.0, 0.0)
+    root.add_child(overlapping)
+    root.add_child(wall())
+    var overlap_app = application(root)
+    frame(overlap_app, 0.1)
+    assert(overlapping.motion()!.started_overlapping)
+    assert(overlapping.position.x < 171.0)
+    overlap_app.run_schedule(Application.Schedule.shutdown)
+}
+
+class Removal:Nodes.Node {
+    var removed:Nodes.Node? = null
+    var replacement:Nodes.Node? = null
+    init():super("Root") { self.set_physics_process(true) }
+    override func on_physics_process(delta:float) {
+        if let removed = self.removed {
+            self.remove_child(removed)
+            self.removed = null
+            if let replacement = self.replacement { self.add_child(replacement) }
+        }
+    }
+}
+
+test "mutate the tree between fixed steps without retaining an ECS query" {
+    var root = Removal()
+    var old_player = Player("Old")
+    var new_player = Player("New")..velocity = Math.Vec2(100.0, 0.0)
+    root.add_child(old_player)
+    var app = application(root)
+    frame(app, 0.1)
+    var old_body = app.resources().get<ECS.World>().get<Physics.PhysicsBody2D>(old_player.entity()!).body()!
+    root.removed = old_player
+    root.replacement = new_player
+    frame(app, 0.2)
+    assert(old_player.steps == 1 && !old_body.is_valid())
+    assert(new_player.ready_count() == 1 && new_player.position == Math.Vec2())
+    frame(app, 0.1)
+    assert(new_player.position.nearly_equal(Math.Vec2(10.0, 0.0), 0.001))
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+func bundle_delta(bundle:Application.Bundle, delta:float) {
+    var resources = bundle.resources()
+    var time = resources.get_mut<Application.FrameTime>()
+    time.delta = delta
+}
+
+test "fixed node callbacks and worlds stay local to each Bundle" {
+    var parent = Application()..add_plugin(Plugins.Physics2D())
+    var first = Player("First")..velocity = Math.Vec2(100.0, 0.0)
+    var second = Player("Second")..velocity = Math.Vec2(200.0, 0.0)
+    var one = Application.Bundle(parent)
+        ..add_plugin(Plugins.Nodes(first))
+        ..add_plugin(Plugins.Physics2D(Plugins.Physics2D.Settings()
+            ..fixed_delta = 0.1
+            ..scene_units_per_meter = 100.0))
+    var two = Application.Bundle(parent)
+        ..add_plugin(Plugins.Physics2D(Plugins.Physics2D.Settings()
+            ..fixed_delta = 0.1
+            ..scene_units_per_meter = 100.0))
+        ..add_plugin(Plugins.Nodes(second))
+    parent.add_plugin(Application.BundleManager(one)..add(two))
+    parent.run_schedule(Application.Schedule.startup)
+    bundle_delta(one, 0.1)
+    bundle_delta(two, 0.1)
+    frame(parent, 0.1)
+    assert(first.steps == 1 && second.steps == 1)
+    assert(first.position.nearly_equal(Math.Vec2(10.0, 0.0), 0.001))
+    assert(second.position.nearly_equal(Math.Vec2(20.0, 0.0), 0.001))
+    {
+        var resources = one.resources()
+        var simulation = resources.get_mut<Application.Simulation>()
+        simulation.pause()
+    }
+    bundle_delta(one, 0.1)
+    bundle_delta(two, 0.1)
+    frame(parent, 0.1)
+    assert(first.steps == 1 && second.steps == 2)
+    parent.run_schedule(Application.Schedule.shutdown)
+}

@@ -6,6 +6,9 @@ de posséder leurs composants et leurs renderers.
 
 ## Principe
 
+Pour les personnages et les obstacles, suivre
+[Déplacer un personnage avec des collisions](CharacterBody2D.md).
+
 Chaque classe de nœud représente une fonctionnalité :
 
 - `Node` possède un nom, un parent, des enfants et un cycle de vie ;
@@ -14,7 +17,9 @@ Chaque classe de nœud représente une fonctionnalité :
 - `Camera2D` et `Camera3D` ajoutent la caméra de leur scène ;
 - `Sprite2D` et `Sprite3D` ajoutent un sprite utilisant une image de
   `GFX.Assets` ;
-- `Canvas2D` ajoute un dessin vectoriel `GFX.Canvas` rendu par Scene2D.
+- `Canvas2D` ajoute un dessin vectoriel `GFX.Canvas` rendu par Scene2D ;
+- `CharacterBody2D` et `StaticBody2D` ajoutent le déplacement avec collisions et
+  les obstacles fixes, avec `Plugins.Physics2D`.
 
 Le `Node` générique ne connaît aucune dimension et ne transporte aucun
 transform. Un nœud spatial compose son transform avec celui de son parent

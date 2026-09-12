@@ -101,7 +101,7 @@ public class Node2D:Node {
         self.invalidate_children_2d(self.changes_are_deferred())
     }
 
-    private func global_transform(world:@ECS.World) Scene2D.Transform {
+    protected func global_transform(world:@ECS.World) Scene2D.Transform {
         var global = self.local_transform
         if let parent_entity = self.spatial_parent_entity {
             global = compose_transform(
@@ -110,6 +110,24 @@ public class Node2D:Node {
             )
         }
         return global
+    }
+
+    protected func set_global_position(world:@ECS.World, value:Math.Vec2) {
+        if let parent_entity = self.spatial_parent_entity {
+            let parent = world.get<Scene2D.Transform>(parent_entity)
+            if parent.scale.x == 0.0 || parent.scale.y == 0.0 {
+                panic("Node2D cannot resolve a global position under a zero-scale parent")
+            }
+            let offset = value.subtract(parent.position)
+            let cosine = Math.cos(parent.rotation)
+            let sine = Math.sin(parent.rotation)
+            self.position = Math.Vec2(
+                offset.x * cosine + offset.y * sine,
+                -offset.x * sine + offset.y * cosine
+            ).divide(parent.scale)
+        } else {
+            self.position = value
+        }
     }
 }
 

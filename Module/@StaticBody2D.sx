@@ -1,0 +1,39 @@
+use GFX.ECS
+use GFX.Physics
+use STD.Math
+
+// Geometry is expressed in physics meters, as with PhysicsBody2D.
+public class StaticBody2D:Node2D {
+    private let body_settings:Physics.RigidBody2DSettings
+
+    init(
+        shape:Physics.Shape2D,
+        name:str = "StaticBody2D",
+        collision_filter:Physics.CollisionFilter2D = Physics.CollisionFilter2D()
+    ):super(name) {
+        self.body_settings = Physics.RigidBody2DSettings()
+            ..body_type = Physics.BodyType2D.fixed
+            ..shape = shape
+            ..collision_filter = collision_filter
+    }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        if !self.resources().has<Physics.World2D>() {
+            panic("StaticBody2D requires Plugins.Physics2D")
+        }
+        self.require_physics_scale(world)
+        world.insert(entity, Physics.PhysicsBody2D(self.body_settings))
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        self.require_physics_scale(world)
+    }
+
+    private func require_physics_scale(world:@ECS.World) {
+        if !self.global_transform(world).scale.nearly_equal(Math.Vec2(1.0), 0.000001) {
+            panic("StaticBody2D requires unit global scale; resize its collision shape instead")
+        }
+    }
+}

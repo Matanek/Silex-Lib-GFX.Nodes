@@ -6,6 +6,9 @@ the owners of their components and renderers.
 
 ## Principle
 
+For characters and obstacles, see
+[Move a character with collisions](CharacterBody2D.md).
+
 Each node class represents one capability:
 
 - `Node` owns a name, parent, children, and lifecycle;
@@ -13,7 +16,9 @@ Each node class represents one capability:
 - `Node3D` adds a local `GFX.Scene3D.Transform`;
 - `Camera2D` and `Camera3D` add the camera for their scene;
 - `Sprite2D` and `Sprite3D` add a sprite using a `GFX.Assets` image;
-- `Canvas2D` adds a `GFX.Canvas` vector drawing rendered by Scene2D.
+- `Canvas2D` adds a `GFX.Canvas` vector drawing rendered by Scene2D;
+- `CharacterBody2D` and `StaticBody2D` add collision-aware motion and fixed
+  obstacles, using `Plugins.Physics2D`.
 
 The generic `Node` has no dimension and carries no transform. A spatial node
 composes its transform with its immediate parent when that parent belongs to

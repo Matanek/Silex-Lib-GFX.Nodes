@@ -1,0 +1,93 @@
+use GFX.ECS
+use GFX.Physics
+use STD.Math
+
+public class CharacterBody2D:Node2D {
+    var velocity:Math.Vec2 = Math.Vec2()
+    private var mover:Physics.CharacterMover2D
+    private let body_settings:Physics.RigidBody2DSettings
+    private var last_move:Physics.CharacterMoveResult2D? = null
+
+    init(
+        settings:Physics.CharacterMover2DSettings = Physics.CharacterMover2DSettings(),
+        name:str = "CharacterBody2D"
+    ):super(name) {
+        self.mover = Physics.CharacterMover2D(settings)
+        self.body_settings = Physics.RigidBody2DSettings()
+            ..body_type = Physics.BodyType2D.fixed
+            ..shape = Physics.Shape2D.capsule(settings.capsule)
+            ..collision_filter = Physics.CollisionFilter2D(
+                settings.query_filter.category_bits,
+                settings.query_filter.mask_bits
+            )
+        self.set_physics_process(true)
+    }
+
+    func motion() Physics.CharacterMoveResult2D? { return self.last_move }
+
+    // Velocity is in scene units per second; the fixed delta is applied once.
+    func move_and_slide() bool {
+        return self.move_and_slide(self.velocity.multiply(self.physics_delta()))
+    }
+
+    // An explicitly integrated displacement preserves custom acceleration laws.
+    func move_and_slide(displacement:Math.Vec2) bool {
+        if self.physics_delta() <= 0.0 || !self.is_enabled_in_tree() {
+            panic("CharacterBody2D.move_and_slide requires on_physics_process")
+        }
+        var resources = self.resources()
+        var physics_resources = self.resources()
+        var world_resources = self.resources()
+        let units = resources.get<Physics.Physics2DStep>().scene_units_per_meter()
+        var physics = physics_resources.get_mut<Physics.World2D>()
+        var world = world_resources.get<ECS.World>()
+        let component = world.get<Physics.PhysicsBody2D>(self.entity()!)
+        if let body = component.body() {
+            let transform = self.global_transform(world)
+            let result = self.mover.calculate_move(
+                physics,
+                transform.position.divide(units),
+                displacement.divide(units),
+                body
+            )
+            let position = transform.position.add(result.applied_translation.multiply(units))
+            self.set_global_position(world, position)
+            body.set_position(position.divide(units))
+            // A contact at the exact destination can have zero positional push
+            // while still blocking the character's inward velocity.
+            for plane in result.planes() {
+                let inward = Math.min(0.0, self.velocity.dot(plane.normal))
+                self.velocity = self.velocity.subtract(plane.normal.multiply(inward))
+            }
+            self.last_move = result
+            return !result.colliders().is_empty()
+        }
+        // A node added during this step becomes a physical participant next frame.
+        self.last_move = null
+        return false
+    }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        if !self.resources().has<Physics.World2D>() {
+            panic("CharacterBody2D requires Plugins.Physics2D")
+        }
+        self.require_physics_transform(world)
+        self.last_move = null
+        world.insert(entity, Physics.PhysicsBody2D(self.body_settings))
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        self.require_physics_transform(world)
+    }
+
+    private func require_physics_transform(world:@ECS.World) {
+        let transform = self.global_transform(world)
+        if !transform.scale.nearly_equal(Math.Vec2(1.0), 0.000001) ||
+            !Math.nearly_equal(transform.rotation, 0.0, 0.000001)
+        {
+            panic("CharacterBody2D requires an upright capsule and unit global scale")
+        }
+    }
+}

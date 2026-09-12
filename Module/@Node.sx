@@ -84,6 +84,20 @@ public class Node {
     private var current_processing:bool
     private var current_ready_count:int
     private var current_process_delta:float
+    private var current_physics_enabled:bool = false
+    private var current_physics_registered:bool = false
+    private var current_physics_delta:float = 0.0
+
+    func set_physics_process(enabled:bool) {
+        self.current_physics_enabled = enabled
+        if enabled && self.current_inside_tree && !self.current_physics_registered {
+            self.current_tree!.register_physics_process(self)
+            self.current_physics_registered = true
+        }
+    }
+
+    func is_physics_processing() bool { return self.current_physics_enabled }
+    func physics_delta() float { return self.current_physics_delta }
 
     init(name:str = "Node") {
         self.current_name = name
@@ -286,6 +300,7 @@ public class Node {
     protected func on_disable() {}
     protected func on_ready() {}
     protected func on_process(delta:float) {}
+    protected func on_physics_process(delta:float) {}
     protected func on_exit_tree() {}
 
     module func mount_subtree(world:&ECS.World, tree:SceneTree) {
@@ -315,6 +330,10 @@ public class Node {
             self.current_process_registered = true
         }
         self.mount_components(world, entity)
+        if self.current_physics_enabled {
+            tree.register_physics_process(self)
+            self.current_physics_registered = true
+        }
         world.enable(entity, self.effective_enabled)
 
         var children = self.current_children
@@ -354,6 +373,15 @@ public class Node {
         self.synchronize_activation(world)
     }
 
+    module func process_physics_step(delta:float, world:&ECS.World) {
+        self.current_processing = true
+        self.current_physics_delta = delta
+        self.on_physics_process(delta)
+        self.current_physics_delta = 0.0
+        self.current_processing = false
+        self.flush_synchronization(world)
+    }
+
     module func unmount_subtree(world:&ECS.World) {
         if !self.current_inside_tree { return }
         self.suspend_subtree()
@@ -374,6 +402,7 @@ public class Node {
         self.current_dirty = false
         self.current_synchronization_registered = false
         self.current_process_registered = false
+        self.current_physics_registered = false
         self.current_processing = false
         if var parent = self.mounted_parent {
             var index = 0

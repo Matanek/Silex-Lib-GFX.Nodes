@@ -11,6 +11,7 @@ public class SceneTree {
     private var current_frame:int
     private var current_process_nodes:Node[]
     private var current_dirty_nodes:Node[]
+    private var current_physics_nodes:Node[] = []
     private var pending_attachments:Node[] = []
     private var pending_detachments:Node[] = []
 
@@ -25,6 +26,37 @@ public class SceneTree {
     func root() Node { return self.current_root }
     func is_running() bool { return self.current_running }
     func frame() int { return self.current_frame }
+
+    // A simulation driver calls this once per fixed step, outside ECS query iteration.
+    module func process_physics(delta:float, callback_resources:Application.Resources) {
+        var resources = callback_resources
+        if !self.current_running { return }
+        if delta <= 0.0 || delta != delta || delta + delta == delta {
+            panic("SceneTree.process_physics requires a finite positive delta")
+        }
+        let paused = resources.get<Application.Simulation>().is_paused()
+        if paused { return }
+        let address = C.object_address(resources)
+        var world = resources.get_mut<ECS.World>()
+        self.begin_callbacks(address)
+        self.flush_mutations(world)
+        self.flush_synchronizations(world)
+        let count = self.current_physics_nodes.count()
+        var index = 0
+        while index < count {
+            var node = self.current_physics_nodes[index]
+            if node.can_process(self) { node.flush_synchronization(world) }
+            if node.can_process(self) && node.is_physics_processing() &&
+                node.processes_while(paused)
+            {
+                node.process_physics_step(delta, world)
+            }
+            index++
+        }
+        self.flush_mutations(world)
+        self.flush_synchronizations(world)
+        self.end_callbacks()
+    }
 
     // The calling system owns the store for this synchronous lifecycle pass.
     // Keep a non-owning identity only until end_callbacks: retaining the store
@@ -56,6 +88,7 @@ public class SceneTree {
     module func start(world:&ECS.World) {
         if self.current_running { panic("SceneTree is already running") }
         self.current_process_nodes.clear()
+        self.current_physics_nodes.clear()
         self.current_dirty_nodes.clear()
         if self.current_root.parent() != null {
             panic("SceneTree root must not have a parent")
@@ -97,6 +130,7 @@ public class SceneTree {
         self.current_process_nodes.clear()
         self.current_dirty_nodes.clear()
         self.pending_attachments.clear()
+        self.current_physics_nodes.clear()
         self.pending_detachments.clear()
         self.current_input = null
     }
@@ -120,6 +154,10 @@ public class SceneTree {
         self.current_process_nodes.append(node)
     }
 
+    module func register_physics_process(node:Node) {
+        self.current_physics_nodes.append(node)
+    }
+
     module func register_synchronization(node:Node) {
         self.current_dirty_nodes.append(node)
     }
@@ -141,6 +179,11 @@ public class SceneTree {
             if node.can_process(self) { self.current_process_nodes.append(node) }
         }
         var dirty = self.current_dirty_nodes
+        var physics = self.current_physics_nodes
+        self.current_physics_nodes = []
+        for node in physics {
+            if node.can_process(self) { self.current_physics_nodes.append(node) }
+        }
         self.current_dirty_nodes = []
         for node in dirty {
             if node.can_process(self) { self.current_dirty_nodes.append(node) }
