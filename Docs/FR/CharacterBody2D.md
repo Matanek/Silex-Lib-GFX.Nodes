@@ -1,8 +1,8 @@
 # Déplacer un personnage avec des collisions
 
 `Nodes.CharacterBody2D` déplace une capsule contre les corps du monde physique.
-Le contrôleur choisit la vitesse ; `move_and_slide` applique le déplacement
-autorisé et retire de la vitesse la composante bloquée par les contacts.
+Le contrôleur choisit la vitesse ; `move` applique le déplacement autorisé.
+Par défaut, il glisse et retire de la vitesse la composante bloquée par les contacts.
 `Nodes.StaticBody2D` représente les murs et les obstacles fixes.
 
 Installer `Plugins.Physics2D()` et `Plugins.Nodes(root)` dans la même
@@ -30,7 +30,7 @@ class Player:Nodes.CharacterBody2D {
 
     override func on_physics_process(delta:float) {
         self.velocity = Math.Vec2(360.0, 0.0)
-        self.move_and_slide()
+        self.move()
     }
 }
 ```
@@ -41,10 +41,38 @@ pas fixe. Les entrées et l'IA peuvent décider de cette vitesse de la même fa�
 La gravité, l'accélération et le freinage appartiennent au contrôleur.
 
 Un contrôleur qui intègre lui-même son accélération peut appeler
-`move_and_slide(displacement)` avec une translation globale en unités de scène.
+`move(displacement)` avec une translation globale en unités de scène.
 Cette surcharge conserve son intégration, sans remultiplier par le pas fixe.
-Les deux formes renvoient `true` si le mouvement rencontre un collider.
-Elles s'appellent uniquement depuis `on_physics_process`.
+Les deux formes renvoient un `Nodes.MotionResult2D` et s'appellent uniquement
+depuis `on_physics_process`.
+
+Le paramètre `response` choisit la réponse aux collisions :
+
+- `Nodes.CollisionResponse.slide` (par défaut) poursuit le mouvement le long des
+  obstacles et retire de `velocity` les composantes bloquées.
+- `Nodes.CollisionResponse.stop` arrête le mouvement au premier impact. Il
+  conserve `velocity` : le contrôleur décide de l'arrêt, des dégâts ou du rebond.
+
+```sx
+let result = self.move(displacement, Nodes.CollisionResponse.stop)
+if result.collided() {
+    let normal = result.collisions()[0].normal
+    // Le reste du trajet est disponible pour une réponse personnalisée.
+    let remaining = result.remaining_translation
+}
+```
+
+`move()` utilise toujours le glissement. Pour choisir `stop` à partir de la
+vitesse, appeler `move(self.velocity.multiply(delta), Nodes.CollisionResponse.stop)`.
+Les deux réponses corrigent un recouvrement initial avant le mouvement demandé.
+Les impacts respectent les tolérances du solveur physique.
+
+`test_move(displacement, response)` prédit le même résultat depuis la pose
+courante. Le glissement est également sa réponse par défaut. Il ne modifie ni
+la pose du nœud, ni son corps, ni sa vitesse, ni `motion()`, et n'avance pas la
+simulation. Il est utilisable pendant les callbacks d'un nœud monté, notamment
+`on_process`, même hors d'un pas physique ou pendant la pause. Les obstacles sont
+ceux actuellement synchronisés dans le monde ; le test n'anticipe pas leurs déplacements futurs.
 
 ## Donner une forme aux obstacles
 
@@ -70,10 +98,22 @@ ignorés comme obstacles par défaut.
 
 ## Lire les contacts et gérer le cycle de vie
 
-`motion()` renvoie le dernier `Physics.CharacterMoveResult2D`, ou `null` avant
-le premier déplacement lié au monde. Ses translations sont en mètres ; il
-contient les colliders et les plans rencontrés ainsi que l'indication d'un
-recouvrement initial. Les handles de colliders suivent la durée de vie du monde.
+`move` renvoie un `Nodes.MotionResult2D` ; `motion()` conserve le dernier
+résultat appliqué, ou `null` avant le premier appel et après un nouveau montage.
+
+- `applied_translation` est le déplacement réalisé en unités de scène.
+- `remaining_translation` est le déplacement demandé moins le déplacement
+  réalisé, y compris la correction d'un recouvrement initial.
+- `started_overlapping` indique un recouvrement initial.
+- `collided()` indique la présence de contacts ; `collisions()` fournit des
+  `Nodes.MotionCollision2D` avec `point` global en unités de scène, `normal`
+  unitaire et `collider()`.
+
+Les contacts peuvent provenir du départ, du trajet ou de l'arrivée. Un contact
+n'implique donc pas nécessairement un déplacement bloqué. Les handles de colliders
+suivent la durée de vie du monde. Si le corps attend sa liaison au monde, le
+résultat indique zéro déplacement réalisé, tout le déplacement en reste et aucun
+contact.
 
 `CharacterBody2D` active automatiquement les callbacks physiques. Les autres
 nœuds peuvent employer `set_physics_process(true)` et surcharger
@@ -101,7 +141,7 @@ impulsions du solveur et n'applique pas de poussée de gameplay aux obstacles
 dynamiques. Le suivi des plateformes, la classification sol/mur/plafond,
 l'adhérence aux pentes et le franchissement des marches ne sont pas fournis.
 Une modification directe de `position` reste un repositionnement sans test du
-trajet ; employer `move_and_slide` pour le mouvement contraint.
+trajet ; employer `move` pour le mouvement contraint.
 
 Les [tests consommateurs](../../Tests/Consumer/Tests/CharacterBody2D.sx) couvrent
 le glissement, la vitesse corrigée, les filtres, les transformations parentales,

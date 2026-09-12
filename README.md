@@ -34,7 +34,8 @@ write per affected component.
 
 ## Documentation
 
-`CharacterBody2D` provides controller-driven capsule motion with sliding;
+`CharacterBody2D` provides controller-driven capsule motion with
+`move(displacement, response)` (slide or stop) and non-mutating `test_move`;
 `StaticBody2D` provides fixed obstacles. Install `Plugins.Physics2D` to run their
 simulation and use `on_physics_process` for fixed-step movement. Physics is a
 package dependency; starting its simulation remains explicit.

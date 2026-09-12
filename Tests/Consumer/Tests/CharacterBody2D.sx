@@ -18,7 +18,7 @@ class Player:Nodes.CharacterBody2D {
     override func on_physics_process(delta:float) {
         assert(Math.nearly_equal(delta, 0.1, 0.00001))
         self.steps++
-        if self.move_and_slide() { self.collisions++ }
+        if self.move().collided() { self.collisions++ }
     }
 }
 
@@ -66,7 +66,7 @@ test "fixed steps slide a visible character along a wall and correct its velocit
     assert(Math.nearly_equal(player.position.y, 10.0, 0.1))
     assert(Math.abs(player.velocity.x) < 0.01)
     assert(Math.nearly_equal(player.velocity.y, 100.0, 0.01))
-    assert(player.motion()!.colliders().count() == 1)
+    assert(player.motion()!.collisions().count() == 1)
     {
         var world = app.resources().get<ECS.World>()
         let pose = world.get<Scene2D.Transform>(visual.entity()!).position
@@ -185,7 +185,7 @@ test "world motion is converted back into the local transform under a spatial pa
 class IntegratedPlayer:Player {
     override func on_physics_process(delta:float) {
         self.steps++
-        self.move_and_slide(Math.Vec2(17.0, 0.0))
+        self.move(Math.Vec2(17.0, 0.0))
     }
 }
 
@@ -276,4 +276,130 @@ test "fixed node callbacks and worlds stay local to each Bundle" {
     frame(parent, 0.1)
     assert(first.steps == 1 && second.steps == 2)
     parent.run_schedule(Application.Schedule.shutdown)
+}
+
+class MotionPlayer:Nodes.CharacterBody2D {
+    var response:Nodes.CollisionResponse = Nodes.CollisionResponse.stop
+    var prediction:Nodes.MotionResult2D? = null
+    var bounce:bool = false
+
+    override func on_physics_process(delta:float) {
+        let displacement = self.velocity.multiply(delta)
+        self.prediction = self.test_move(displacement, self.response)
+        let result = self.move(displacement, self.response)
+        if self.bounce && result.collided() {
+            let normal = result.collisions()[0].normal
+            let remaining = result.remaining_translation
+            let reflected = remaining.subtract(normal.multiply(2.0 * remaining.dot(normal)))
+            self.velocity = self.velocity.subtract(normal.multiply(2.0 * self.velocity.dot(normal)))
+            self.move(reflected, Nodes.CollisionResponse.stop)
+        }
+    }
+}
+
+test "stop returns scene units and preserves velocity while slide continues along the wall" {
+    let responses:Nodes.CollisionResponse[] = [Nodes.CollisionResponse.stop, Nodes.CollisionResponse.slide]
+    for response in responses {
+        var root = Nodes.Node("Root")
+        var player = MotionPlayer()..velocity = Math.Vec2(4000.0, 2000.0)
+        player.response = response
+        root.add_child(player)
+        root.add_child(wall())
+        var app = application(root)
+        frame(app, 0.1)
+        let result = player.motion()!
+        assert(result.applied_translation.nearly_equal(player.position, 0.001))
+        assert(result.applied_translation.add(result.remaining_translation)
+            .nearly_equal(Math.Vec2(400.0, 200.0), 0.001))
+        assert(result.applied_translation.nearly_equal(player.prediction!.applied_translation, 0.001))
+        assert(result.collided() && result.collisions().count() == 1)
+        let contact = result.collisions()[0]
+        assert(Math.abs(contact.point.x - 200.0) < 1.0)
+        assert(contact.normal.nearly_equal(Math.Vec2(-1.0, 0.0), 0.001))
+        assert(contact.collider().body().is_valid())
+        if response == Nodes.CollisionResponse.stop {
+            assert(player.position.nearly_equal(Math.Vec2(170.0, 85.0), 0.6))
+            assert(player.velocity == Math.Vec2(4000.0, 2000.0))
+        } else {
+            assert(Math.abs(player.position.y - 200.0) < 0.1)
+            assert(Math.abs(player.velocity.x) < 0.01)
+        }
+        app.run_schedule(Application.Schedule.shutdown)
+    }
+}
+
+class PredictionPlayer:MotionPlayer {
+    var predict_enabled:bool = false
+    var preview:Nodes.MotionResult2D? = null
+
+    init():super() {
+        self.set_process(true)
+        self.process_mode = Application.ProcessMode.always
+    }
+
+    override func on_ready() {
+        self.preview = self.test_move(Math.Vec2(7.0, 3.0))
+    }
+
+    override func on_process(delta:float) {
+        if !self.predict_enabled { return }
+        let position = self.position
+        let velocity = self.velocity
+        let previous = self.motion()
+        var body = self.resources().get<ECS.World>().get<Physics.PhysicsBody2D>(self.entity()!).body()!
+        let body_position = body.position()
+        let responses:Nodes.CollisionResponse[] = [Nodes.CollisionResponse.slide, Nodes.CollisionResponse.stop]
+        for response in responses {
+            self.preview = self.test_move(Math.Vec2(400.0, 200.0), response)
+            assert(self.preview!.collided())
+            assert(self.position == position && self.velocity == velocity)
+            assert(body.position() == body_position)
+            if let last_applied = previous {
+                assert(self.motion()!.applied_translation == last_applied.applied_translation)
+            } else { assert(self.motion() == null) }
+        }
+    }
+}
+
+test "test_move predicts before the first fixed step and while paused without changing state" {
+    var root = Nodes.Node("Root")
+    var player = PredictionPlayer()..velocity = Math.Vec2(100.0, 0.0)
+    root.add_child(player)
+    root.add_child(wall())
+    var app = application(root)
+    assert(player.preview!.applied_translation == Math.Vec2())
+    assert(player.preview!.remaining_translation == Math.Vec2(7.0, 3.0))
+    assert(!player.preview!.collided())
+    frame(app, 0.0)
+    player.predict_enabled = true
+    frame(app, 0.0)
+    let initial = player.preview!
+    assert(initial.applied_translation.nearly_equal(Math.Vec2(170.0, 85.0), 0.6))
+    assert(player.position == Math.Vec2() && player.motion() == null)
+    player.predict_enabled = false
+    frame(app, 0.1)
+    {
+        var resources = app.resources()
+        var simulation = resources.get_mut<Application.Simulation>()
+        simulation.pause()
+    }
+    player.predict_enabled = true
+    frame(app, 1.0)
+    assert(player.preview!.collided())
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+test "a controller can consume stop remainder as a custom bounce in the same fixed step" {
+    var root = Nodes.Node("Root")
+    var player = MotionPlayer()..velocity = Math.Vec2(4000.0, 2000.0)
+    player.bounce = true
+    root.add_child(player)
+    root.add_child(wall())
+    var app = application(root)
+    frame(app, 0.1)
+    assert(player.position.nearly_equal(Math.Vec2(-60.0, 200.0), 1.1))
+    assert(player.velocity.nearly_equal(Math.Vec2(-4000.0, 2000.0), 0.001))
+    var body = app.resources().get<ECS.World>().get<Physics.PhysicsBody2D>(player.entity()!).body()!
+    assert(body.position().multiply(100.0).nearly_equal(player.position, 0.001))
+    app.run_schedule(Application.Schedule.shutdown)
 }

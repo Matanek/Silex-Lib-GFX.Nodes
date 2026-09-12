@@ -1,8 +1,8 @@
 # Move a character with collisions
 
 `Nodes.CharacterBody2D` moves a capsule against bodies in the physics world.
-The controller chooses the velocity; `move_and_slide` applies the permitted
-displacement and removes the velocity component blocked by contacts.
+The controller chooses the velocity; `move` applies the permitted displacement.
+By default it slides and removes the velocity component blocked by contacts.
 `Nodes.StaticBody2D` represents walls and fixed obstacles.
 
 Install `Plugins.Physics2D()` and `Plugins.Nodes(root)` in the same Application
@@ -30,7 +30,7 @@ class Player:Nodes.CharacterBody2D {
 
     override func on_physics_process(delta:float) {
         self.velocity = Math.Vec2(360.0, 0.0)
-        self.move_and_slide()
+        self.move()
     }
 }
 ```
@@ -41,10 +41,38 @@ delta. Input and AI can choose this velocity in the same way. Gravity,
 acceleration and braking belong to the controller.
 
 A controller integrating its own acceleration can call
-`move_and_slide(displacement)` with a global translation in scene units. This
+`move(displacement)` with a global translation in scene units. This
 overload preserves that integration without multiplying by the fixed delta
-again. Both forms return `true` when motion encounters a collider. Call them
-only from `on_physics_process`.
+again. Both forms return a `Nodes.MotionResult2D`. Call them only from
+`on_physics_process`.
+
+The `response` parameter selects the collision response:
+
+- `Nodes.CollisionResponse.slide` (the default) continues along obstacles and
+  removes blocked components from `velocity`.
+- `Nodes.CollisionResponse.stop` stops at the first impact. It preserves
+  `velocity`: the controller chooses whether to stop, apply damage or bounce.
+
+```sx
+let result = self.move(displacement, Nodes.CollisionResponse.stop)
+if result.collided() {
+    let normal = result.collisions()[0].normal
+    // The remaining path is available for a custom response.
+    let remaining = result.remaining_translation
+}
+```
+
+`move()` always slides. To select `stop` from velocity, call
+`move(self.velocity.multiply(delta), Nodes.CollisionResponse.stop)`.
+Both responses recover initial overlap before applying the requested motion.
+Impacts respect the physics solver's tolerances.
+
+`test_move(displacement, response)` predicts the same result from the current
+pose, also defaulting to sliding. It changes neither the node pose, body,
+velocity nor `motion()`, and does not advance the simulation. It works during lifecycle
+callbacks of a mounted node, including `on_process`, outside physics steps and
+while paused. Obstacles use their
+currently synchronized world poses; the test does not predict their future motion.
 
 ## Give obstacles a shape
 
@@ -69,10 +97,20 @@ characters and bodies can detect it. Sensors are ignored as obstacles by default
 
 ## Read contacts and manage lifecycle
 
-`motion()` returns the last `Physics.CharacterMoveResult2D`, or `null` before
-the first movement bound to the world. Its translations use meters; it contains
-encountered colliders and planes and reports initial overlap. Collider handles
-follow the world's lifetime rules.
+`move` returns a `Nodes.MotionResult2D`; `motion()` stores the last applied
+result, or `null` before the first call and after remounting.
+
+- `applied_translation` is the completed movement in scene units.
+- `remaining_translation` is the requested minus completed movement, including
+  any initial overlap recovery.
+- `started_overlapping` reports initial overlap.
+- `collided()` reports contacts; `collisions()` provides `Nodes.MotionCollision2D`
+  values with a global `point` in scene units, a unit `normal`, and `collider()`.
+
+Contacts can originate at the start, along the path or at the endpoint. A contact
+therefore does not necessarily mean blocked movement. Collider handles follow
+the world's lifetime rules. While a body awaits world binding, the result reports
+zero completed movement, the entire requested movement as remaining, and no contacts.
 
 `CharacterBody2D` enables physics callbacks automatically. Other nodes can use
 `set_physics_process(true)` and override `on_physics_process(delta)`.
@@ -98,7 +136,7 @@ The character is controller-driven: solver impulses do not move it, and it does
 not apply gameplay pushing to dynamic obstacles. Platform following,
 floor/wall/ceiling classification, slope snapping and step climbing are not
 provided. Assigning `position` directly remains a repositioning operation
-without testing the path; use `move_and_slide` for constrained motion.
+without testing the path; use `move` for constrained motion.
 
 The [consumer tests](../../Tests/Consumer/Tests/CharacterBody2D.sx) cover sliding,
 corrected velocity, filters, parent transforms, pause, mutations during a step

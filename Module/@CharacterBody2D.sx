@@ -1,12 +1,13 @@
 use GFX.ECS
 use GFX.Physics
+use GFX.Physics.CollisionResponse.CollisionResponse
 use STD.Math
 
 public class CharacterBody2D:Node2D {
     var velocity:Math.Vec2 = Math.Vec2()
     private var mover:Physics.CharacterMover2D
     private let body_settings:Physics.RigidBody2DSettings
-    private var last_move:Physics.CharacterMoveResult2D? = null
+    private var last_move:MotionResult2D? = null
 
     init(
         settings:Physics.CharacterMover2DSettings = Physics.CharacterMover2DSettings(),
@@ -23,48 +24,68 @@ public class CharacterBody2D:Node2D {
         self.set_physics_process(true)
     }
 
-    func motion() Physics.CharacterMoveResult2D? { return self.last_move }
+    func motion() MotionResult2D? { return self.last_move }
 
-    // Velocity is in scene units per second; the fixed delta is applied once.
-    func move_and_slide() bool {
-        return self.move_and_slide(self.velocity.multiply(self.physics_delta()))
+    // Velocity is in scene units per second; apply the current fixed delta once.
+    func move() MotionResult2D {
+        return self.move(self.velocity.multiply(self.physics_delta()))
     }
 
-    // An explicitly integrated displacement preserves custom acceleration laws.
-    func move_and_slide(displacement:Math.Vec2) bool {
+    func move(
+        displacement:Math.Vec2,
+        response:CollisionResponse = CollisionResponse.slide
+    ) MotionResult2D {
         if self.physics_delta() <= 0.0 || !self.is_enabled_in_tree() {
-            panic("CharacterBody2D.move_and_slide requires on_physics_process")
+            panic("CharacterBody2D.move requires on_physics_process")
+        }
+        let result = self.test_move(displacement, response)
+        var world_resources = self.resources()
+        var world = world_resources.get<ECS.World>()
+        let component = world.get<Physics.PhysicsBody2D>(self.entity()!)
+        if let body = component.body() {
+            let position = self.global_transform(world).position.add(result.applied_translation)
+            let units = self.resources().get<Physics.Physics2DStep>().scene_units_per_meter()
+            self.set_global_position(world, position)
+            body.set_position(position.divide(units))
+            if response == CollisionResponse.slide {
+                for collision in result.collisions() {
+                    let inward = Math.min(0.0, self.velocity.dot(collision.normal))
+                    self.velocity = self.velocity.subtract(collision.normal.multiply(inward))
+                }
+            }
+        }
+        self.last_move = result
+        return result
+    }
+
+    // Predict from the current global pose without changing the node, its
+    // collider, its velocity or the last applied motion. No physics step runs.
+    func test_move(
+        displacement:Math.Vec2,
+        response:CollisionResponse = CollisionResponse.slide
+    ) MotionResult2D {
+        if displacement.x != displacement.x || displacement.y != displacement.y ||
+            (displacement.x != 0.0 && displacement.x + displacement.x == displacement.x) ||
+            (displacement.y != 0.0 && displacement.y + displacement.y == displacement.y)
+        {
+            panic("CharacterBody2D.test_move requires finite displacement")
         }
         var resources = self.resources()
         var physics_resources = self.resources()
         var world_resources = self.resources()
         let units = resources.get<Physics.Physics2DStep>().scene_units_per_meter()
-        var physics = physics_resources.get_mut<Physics.World2D>()
+        var physics = physics_resources.get<Physics.World2D>()
         var world = world_resources.get<ECS.World>()
         let component = world.get<Physics.PhysicsBody2D>(self.entity()!)
         if let body = component.body() {
-            let transform = self.global_transform(world)
+            self.require_physics_transform(world)
             let result = self.mover.calculate_move(
-                physics,
-                transform.position.divide(units),
-                displacement.divide(units),
-                body
+                physics, self.global_transform(world).position.divide(units),
+                displacement.divide(units), body, response
             )
-            let position = transform.position.add(result.applied_translation.multiply(units))
-            self.set_global_position(world, position)
-            body.set_position(position.divide(units))
-            // A contact at the exact destination can have zero positional push
-            // while still blocking the character's inward velocity.
-            for plane in result.planes() {
-                let inward = Math.min(0.0, self.velocity.dot(plane.normal))
-                self.velocity = self.velocity.subtract(plane.normal.multiply(inward))
-            }
-            self.last_move = result
-            return !result.colliders().is_empty()
+            return MotionResult2D(result, units)
         }
-        // A node added during this step becomes a physical participant next frame.
-        self.last_move = null
-        return false
+        return MotionResult2D(pending_translation:displacement)
     }
 
     override func mount_components(world:&ECS.World, entity:ECS.Entity) {

@@ -1,0 +1,44 @@
+use GFX.Physics
+use STD.Math
+
+public struct MotionCollision2D {
+    let point:Math.Vec2
+    let normal:Math.Vec2
+    private var current_collider:Physics.Collider2D
+
+    module init(plane:Physics.CharacterCollisionPlane2D, units:float) {
+        self.point = plane.point.multiply(units)
+        self.normal = plane.normal
+        self.current_collider = plane.collider()
+    }
+
+    func collider() Physics.Collider2D { return self.current_collider }
+}
+
+public struct MotionResult2D {
+    let applied_translation:Math.Vec2
+    let remaining_translation:Math.Vec2
+    let started_overlapping:bool
+    private var current_collisions:MotionCollision2D[]
+
+    module init(result:Physics.CharacterMoveResult2D, units:float) {
+        self.applied_translation = result.applied_translation.multiply(units)
+        self.remaining_translation = result.remaining_translation.multiply(units)
+        self.started_overlapping = result.started_overlapping
+        self.current_collisions = []
+        for plane in result.planes() {
+            self.current_collisions.append(MotionCollision2D(plane, units))
+        }
+    }
+
+    // A node created during a physics step is bound on the next frame.
+    module init(pending_translation:Math.Vec2) {
+        self.applied_translation = Math.Vec2()
+        self.remaining_translation = pending_translation
+        self.started_overlapping = false
+        self.current_collisions = []
+    }
+
+    func collided() bool { return !self.current_collisions.is_empty() }
+    func collisions() MotionCollision2D[] { return self.current_collisions }
+}
