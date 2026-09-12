@@ -1,0 +1,143 @@
+use GFX.Application
+use GFX.Nodes
+use GFX.Plugins
+
+class Publisher:Nodes.Node {
+    private var source:Nodes.EventEmitter<int> = Nodes.EventEmitter<int>()
+    var value_changed:Nodes.Event<int> { get { return self.source.event } }
+    func publish(value:int) { self.source.emit(value) }
+}
+
+class Listener:Nodes.Node {
+    var publisher:Publisher
+    var total:int = 0
+    var connection:Nodes.Connection? = null
+    var delivery:Nodes.EventDelivery
+
+    init(publisher:Publisher, name:str = "Listener", delivery:Nodes.EventDelivery = Nodes.EventDelivery.immediate):super(name) {
+        self.publisher = publisher
+        self.delivery = delivery
+    }
+    override func on_ready() { self.connection = self.listen(self.publisher.value_changed, self.receive, self.delivery) }
+    func receive(value:int) { self.total += value }
+}
+
+func start(root:Nodes.Node) Application {
+    var application = Application()..add_plugin(Plugins.Nodes(root))
+    application.prepare()
+    application.run_schedule(Application.Schedule.startup)
+    return application
+}
+
+test "node subscriptions retain bound methods and disconnect on removal and shutdown" {
+    var publisher = Publisher()
+    var listener = Listener(publisher)
+    publisher.add_child(listener)
+    var application = start(publisher)
+    publisher.publish(3)
+    assert(listener.total == 3)
+    assert(listener.connection!.is_connected())
+    publisher.remove_child(listener)
+    assert(!listener.connection!.is_connected())
+    publisher.publish(7)
+    assert(listener.total == 3)
+    application.run_schedule(Application.Schedule.update)
+    publisher.add_child(listener)
+    application.run_schedule(Application.Schedule.update)
+    publisher.publish(5)
+    assert(listener.total == 8)
+    listener.connection!.disconnect()
+    publisher.publish(11)
+    assert(listener.total == 8)
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "deferred subscriptions use the receiving tree and skip disconnected callbacks" {
+    var publisher = Publisher()
+    var listener = Listener(publisher, delivery:Nodes.EventDelivery.deferred)
+    publisher.add_child(listener)
+    var application = start(publisher)
+    publisher.publish(3)
+    assert(listener.total == 0)
+    application.run_schedule(Application.Schedule.update)
+    assert(listener.total == 3)
+    publisher.publish(9)
+    listener.connection!.disconnect()
+    application.run_schedule(Application.Schedule.update)
+    assert(listener.total == 3)
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "pause and activation do not discard event notifications" {
+    var publisher = Publisher()
+    var listener = Listener(publisher)
+    publisher.add_child(listener)
+    var application = start(publisher)
+    listener.enable(false)
+    var resources = application.resources()
+    var simulation = resources.get_mut<Application.Simulation>()
+    simulation.pause()
+    publisher.publish(4)
+    assert(listener.total == 4)
+    application.run_schedule(Application.Schedule.shutdown)
+    publisher.publish(7)
+    assert(listener.total == 4)
+}
+
+class DeliveryLog {
+    var values:int[] = []
+    func record(value:int) { self.values.append(value) }
+}
+
+class OrderedListener:Listener {
+    var log:DeliveryLog
+    var id:int
+    var remove:Nodes.Connection? = null
+    var added:bool = false
+    var subscribe_late:bool = false
+
+    init(publisher:Publisher, log:DeliveryLog, id:int, name:str):super(publisher, name) {
+        self.log = log
+        self.id = id
+    }
+    override func receive(value:int) {
+        self.log.record(self.id)
+        if var connection = self.remove { connection.disconnect() }
+        if self.subscribe_late && !self.added {
+            self.added = true
+            self.listen(self.publisher.value_changed, self.late)
+        }
+    }
+    func late(value:int) { self.log.record(3) }
+}
+
+test "emission preserves order while listeners disconnect and subscribe" {
+    var publisher = Publisher()
+    var log = DeliveryLog()
+    var first = OrderedListener(publisher, log, 1, "First")..subscribe_late = true
+    var second = OrderedListener(publisher, log, 2, "Second")
+    publisher.add_child(first)
+    publisher.add_child(second)
+    var application = start(publisher)
+    first.remove = second.connection
+    publisher.publish(0)
+    assert(log.values.count() == 1 && log.values[0] == 1)
+    publisher.publish(0)
+    assert(log.values.count() == 3 && log.values[1] == 1 && log.values[2] == 3)
+    application.run_schedule(Application.Schedule.shutdown)
+}
+
+test "explicitly shared events defer independently in each receiving tree" {
+    var publisher = Publisher()
+    var first = Listener(publisher, delivery:Nodes.EventDelivery.deferred)
+    var second = Listener(publisher, delivery:Nodes.EventDelivery.deferred)
+    var first_app = start(first)
+    var second_app = start(second)
+    publisher.publish(6)
+    first_app.run_schedule(Application.Schedule.update)
+    assert(first.total == 6 && second.total == 0)
+    second_app.run_schedule(Application.Schedule.update)
+    assert(first.total == 6 && second.total == 6)
+    first_app.run_schedule(Application.Schedule.shutdown)
+    second_app.run_schedule(Application.Schedule.shutdown)
+}

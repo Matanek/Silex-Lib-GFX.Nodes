@@ -1,0 +1,13 @@
+use GFX.Physics
+
+// A body may come from a node, from an ECS component or directly from physics.
+// Keep the handle even after destruction so an exit still identifies its body.
+public struct BodyContact2D {
+    var body:Physics.RigidBody2D
+    var node:Node?
+
+    module init(body:Physics.RigidBody2D, node:Node?) {
+        self.body = body
+        self.node = node
+    }
+}

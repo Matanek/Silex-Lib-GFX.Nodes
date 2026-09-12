@@ -4,6 +4,9 @@
 GFX. Chaque nœud monté possède une entité ECS ; les scènes 2D et 3D continuent
 de posséder leurs composants et leurs renderers.
 
+Voir aussi [Communiquer entre Nodes](Events.md) et
+[Détecter avec Area2D et Raycast2D](Sensors2D.md).
+
 ## Principe
 
 Pour les personnages et les obstacles, suivre
@@ -19,7 +22,9 @@ Chaque classe de nœud représente une fonctionnalité :
   `GFX.Assets` ;
 - `Canvas2D` ajoute un dessin vectoriel `GFX.Canvas` rendu par Scene2D ;
 - `CharacterBody2D` et `StaticBody2D` ajoutent le déplacement avec collisions et
-  les obstacles fixes, avec `Plugins.Physics2D`.
+  les obstacles fixes, avec `Plugins.Physics2D` ;
+- `Area2D` détecte les chevauchements sans bloquer les corps ;
+- `Raycast2D` recherche le premier obstacle sur un segment.
 
 Le `Node` générique ne connaît aucune dimension et ne transporte aucun
 transform. Un nœud spatial compose son transform avec celui de son parent

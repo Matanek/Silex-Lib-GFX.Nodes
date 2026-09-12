@@ -1,0 +1,94 @@
+use GFX.ECS
+use GFX.Physics
+use STD.Math
+
+public class Area2D:Node2D {
+    private let body_settings:Physics.RigidBody2DSettings
+    private var entered_source:EventEmitter<BodyContact2D> = EventEmitter<BodyContact2D>()
+    private var exited_source:EventEmitter<BodyContact2D> = EventEmitter<BodyContact2D>()
+    private var current_bodies:BodyContact2D[] = []
+
+    var body_entered:Event<BodyContact2D> { get { return self.entered_source.event } }
+    var body_exited:Event<BodyContact2D> { get { return self.exited_source.event } }
+
+    init(shape:Physics.Shape2D, name:str = "Area2D", collision_filter:Physics.CollisionFilter2D = Physics.CollisionFilter2D()):super(name) {
+        self.body_settings = Physics.RigidBody2DSettings()
+            ..body_type = Physics.BodyType2D.fixed
+            ..shape = shape
+            ..is_sensor = true
+            ..enable_sensor_events = true
+            ..collision_filter = collision_filter
+    }
+
+    func overlapping_bodies() BodyContact2D[] { return self.current_bodies }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        if !self.resources().has<Physics.World2D>() { panic("Area2D requires Plugins.Physics2D") }
+        self.require_physics_scale(world)
+        self.current_bodies.clear()
+        world.insert(entity, Physics.PhysicsBody2D(self.body_settings))
+        self.register_physics_body()
+        self.register_physics_observer()
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        self.require_physics_scale(world)
+    }
+
+    override func deactivate_components() { self.clear_overlaps() }
+
+    override func physics_step_completed(overlaps:Physics.SensorOverlap2D[]) {
+        if !self.is_enabled_in_tree() { self.clear_overlaps(); return }
+        var world = self.resources().get<ECS.World>()
+        var body = world.get<Physics.PhysicsBody2D>(self.entity()!).body()
+        var next:BodyContact2D[] = []
+        if let sensor = body {
+            for overlap in overlaps {
+                if !overlap.sensor_body().same_body(sensor) || overlap.visitor().is_sensor { continue }
+                var visitor = overlap.visitor_body()
+                if !visitor.is_valid() || !visitor.is_enabled() || contact_index(next, visitor) >= 0 { continue }
+                let previous_index = contact_index(self.current_bodies, visitor)
+                if previous_index >= 0 { next.append(self.current_bodies[previous_index]) }
+                else { next.append(self.body_contact(visitor)) }
+            }
+        }
+        var previous = self.current_bodies
+        for contact in previous {
+            let current_index = contact_index(self.current_bodies, contact.body)
+            if current_index >= 0 && contact_index(next, contact.body) < 0 {
+                self.current_bodies.take(current_index)
+                self.exited_source.emit(contact)
+            }
+        }
+        for contact in next {
+            if !self.is_enabled_in_tree() { break }
+            if contact_index(self.current_bodies, contact.body) < 0 {
+                self.current_bodies.append(contact)
+                self.entered_source.emit(contact)
+            }
+        }
+    }
+
+    private func clear_overlaps() {
+        var previous = self.current_bodies
+        self.current_bodies = []
+        for contact in previous { self.exited_source.emit(contact) }
+    }
+
+    private func require_physics_scale(world:@ECS.World) {
+        if !self.global_transform(world).scale.nearly_equal(Math.Vec2(1.0), 0.000001) {
+            panic("Area2D requires unit global scale; resize its collision shape instead")
+        }
+    }
+}
+
+func contact_index(contacts:BodyContact2D[], body:Physics.RigidBody2D) int {
+    var index = 0
+    while index < contacts.count() {
+        if contacts[index].body.same_body(body) { return index }
+        index++
+    }
+    return -1
+}

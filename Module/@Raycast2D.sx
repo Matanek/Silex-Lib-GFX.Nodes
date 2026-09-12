@@ -1,0 +1,97 @@
+use GFX.ECS
+use GFX.Physics
+use STD.Math
+
+public struct RaycastHit2D {
+    let point:Math.Vec2
+    let normal:Math.Vec2
+    let fraction:float
+    var collider:Physics.Collider2D
+    var body:BodyContact2D
+
+    module init(result:Physics.WorldCastResult2D, body:BodyContact2D, units:float) {
+        self.point = result.point.multiply(units)
+        self.normal = result.normal
+        self.fraction = result.fraction
+        self.collider = result.collider()
+        self.body = body
+    }
+}
+
+public class Raycast2D:Node2D {
+    var target_position:Math.Vec2
+    var query_filter:Physics.QueryFilter2D = Physics.QueryFilter2D()
+    var exclude_parent:bool = true
+    var include_sensors:bool = false
+    var exceptions:Physics.RigidBody2D[] = []
+    private var current_hit:RaycastHit2D? = null
+    private var results:Physics.WorldCastResult2D[] = []
+
+    var hit:RaycastHit2D? { get { return self.current_hit } }
+
+    init(target_position:Math.Vec2 = Math.Vec2(0.0, 50.0), name:str = "Raycast2D"):super(name) {
+        self.target_position = target_position
+    }
+
+    // Manual casts are available during lifecycle callbacks, including ready.
+    // They read the currently bound physics world and refresh the cached hit.
+    func cast() RaycastHit2D? {
+        if !self.is_enabled_in_tree() { self.current_hit = null; return null }
+        var resources = self.resources()
+        var world = resources.get<ECS.World>()
+        let units = self.resources().get<Physics.Physics2DStep>().scene_units_per_meter()
+        let transform = self.global_transform(world)
+        let offset = self.target_position.multiply(transform.scale)
+        let cosine = Math.cos(transform.rotation)
+        let sine = Math.sin(transform.rotation)
+        let translation = Math.Vec2(offset.x * cosine - offset.y * sine, offset.x * sine + offset.y * cosine).divide(units)
+        if translation.length_squared() <= 0.000000000001 { self.current_hit = null; return null }
+        var parent_body:Physics.RigidBody2D? = null
+        if self.exclude_parent {
+            var ancestor = self.parent()
+            while var node = ancestor {
+                if let entity = node.entity() {
+                    if world.has<Physics.PhysicsBody2D>(entity) {
+                        parent_body = world.get<Physics.PhysicsBody2D>(entity).body()
+                        break
+                    }
+                }
+                ancestor = node.parent()
+            }
+        }
+        self.resources().get<Physics.World2D>().write_ray_casts(
+            Physics.Ray2D(transform.position.divide(units), translation),
+            self.results, self.query_filter
+        )
+        var closest:Physics.WorldCastResult2D? = null
+        for result in self.results {
+            var collider = result.collider()
+            if !self.include_sensors && collider.is_sensor() { continue }
+            var body = collider.body()
+            if let parent = parent_body { if body.same_body(parent) { continue } }
+            var excluded = false
+            for exception in self.exceptions { if body.same_body(exception) { excluded = true; break } }
+            if excluded { continue }
+            if closest == null || result.fraction < closest!.fraction { closest = result }
+        }
+        if let result = closest {
+            var body = result.collider().body()
+            var contact = BodyContact2D(body, null)
+            if self.current_hit != null && self.current_hit!.body.body.same_body(body) {
+                contact = self.current_hit!.body
+            } else { contact = self.body_contact(body) }
+            self.current_hit = RaycastHit2D(result, contact, units)
+        } else { self.current_hit = null }
+        return self.current_hit
+    }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        if !self.resources().has<Physics.World2D>() { panic("Raycast2D requires Plugins.Physics2D") }
+        self.current_hit = null
+        self.register_physics_observer()
+    }
+
+    override func physics_step_completed(overlaps:Physics.SensorOverlap2D[]) { self.cast() }
+    override func deactivate_components() { self.current_hit = null; self.results.clear() }
+}

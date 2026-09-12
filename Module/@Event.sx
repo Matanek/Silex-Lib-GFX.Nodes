@@ -1,0 +1,93 @@
+// Events carry facts. Keep the emitter private and publish only its event.
+public enum EventDelivery { immediate; deferred }
+
+public class Connection {
+    module init() {}
+    func is_connected() bool { return false }
+    func disconnect() {}
+}
+
+public class Event<T> {
+    private var listeners:EventSubscription<T>[] = []
+
+    module init() {}
+
+    module func connect(owner:Node, callback:func(T), delivery:EventDelivery) Connection {
+        self.compact()
+        var subscription = EventSubscription<T>(owner, callback, delivery)
+        self.listeners.append(subscription)
+        return subscription
+    }
+
+    module func publish(value:T) {
+        // The snapshot fixes insertion order and excludes listeners added during
+        // this emission. A disconnected listener is skipped even in the snapshot.
+        var listeners = self.listeners
+        for listener in listeners { listener.deliver(value) }
+        self.compact()
+    }
+
+    private func compact() {
+        var index = 0
+        while index < self.listeners.count() {
+            if !self.listeners[index].is_connected() { self.listeners.take(index) }
+            else { index++ }
+        }
+    }
+}
+
+public class EventEmitter<T> {
+    private var published:Event<T>
+
+    init() { self.published = Event<T>() }
+
+    var event:Event<T> { get { return self.published } }
+
+    func emit(value:T) { self.published.publish(value) }
+}
+
+class EventSubscription<T>:Connection {
+    private var owner:Node?
+    private var callback:func(T)?
+    private let delivery:EventDelivery
+
+    init(owner:Node, callback:func(T), delivery:EventDelivery):super() {
+        self.owner = owner
+        self.callback = callback
+        self.delivery = delivery
+    }
+
+    override func is_connected() bool { return self.callback != null }
+
+    override func disconnect() {
+        self.callback = null
+        self.owner = null
+    }
+
+    func deliver(value:T) {
+        if !self.is_connected() { return }
+        if self.delivery == EventDelivery.deferred {
+            self.owner!.queue_event(PendingEvent<T>(self, value))
+        } else { self.invoke(value) }
+    }
+
+    func invoke(value:T) {
+        if let callback = self.callback { callback(value) }
+    }
+}
+
+protocol DeferredEvent {
+    func dispatch()
+}
+
+class PendingEvent<T>:DeferredEvent {
+    private var subscription:EventSubscription<T>
+    private var value:T
+
+    init(subscription:EventSubscription<T>, value:T) {
+        self.subscription = subscription
+        self.value = value
+    }
+
+    func dispatch() { self.subscription.invoke(self.value) }
+}

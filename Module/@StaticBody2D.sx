@@ -24,6 +24,7 @@ public class StaticBody2D:Node2D {
         }
         self.require_physics_scale(world)
         world.insert(entity, Physics.PhysicsBody2D(self.body_settings))
+        self.register_physics_body()
     }
 
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {

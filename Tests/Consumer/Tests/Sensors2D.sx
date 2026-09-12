@@ -1,0 +1,262 @@
+use GFX.Application
+use GFX.ECS
+use GFX.Nodes
+use GFX.Physics
+use GFX.Plugins
+use STD.Math
+
+func application(root:Nodes.Node, nodes_first:bool = false) Application {
+    var app = Application()
+    if nodes_first { app.add_plugin(Plugins.Nodes(root)) }
+    app.add_plugin(Plugins.Physics2D(Plugins.Physics2D.Settings()
+        ..world = (Physics.World2DSettings()..gravity = Math.Vec2())
+        ..fixed_delta = 0.1
+        ..maximum_catch_up_steps = 3
+        ..scene_units_per_meter = 100.0))
+    if !nodes_first { app.add_plugin(Plugins.Nodes(root)) }
+    app.run_schedule(Application.Schedule.startup)
+    return app
+}
+
+func frame(app:Application, delta:float = 0.1) {
+    {
+        var resources = app.resources()
+        var time = resources.get_mut<Application.FrameTime>()
+        time.delta = delta
+    }
+    app.run_schedule(Application.Schedule.update)
+    app.run_schedule(Application.Schedule.post_update)
+}
+
+func same_node(first:Nodes.Node?, second:Nodes.Node) bool { return first != null && first! == second }
+
+func box() Physics.Shape2D { return Physics.Shape2D.box(Physics.Box2D(Math.Vec2(1.0))) }
+func body(app:Application, node:Nodes.Node) Physics.RigidBody2D {
+    return app.resources().get<ECS.World>().get<Physics.PhysicsBody2D>(node.entity()!).body()!
+}
+
+class CustomArea:Nodes.Area2D {
+    var disabled:int = 0
+    init():super(box()) {}
+    override func on_disable() { self.disabled++ }
+}
+
+class TriggerScene:Nodes.Node {
+    var area:Nodes.Area2D
+    var entered:Nodes.BodyContact2D[] = []
+    var exited:Nodes.BodyContact2D[] = []
+    var remove_visitor:bool = false
+    var disable_area:bool = false
+    var delivery:Nodes.EventDelivery = Nodes.EventDelivery.immediate
+    init():super("Root") {
+        self.area = CustomArea()
+        self.add_child(self.area)
+    }
+    override func on_ready() {
+        self.listen(self.area.body_entered, self.on_enter, self.delivery)
+        self.listen(self.area.body_exited, self.on_exit)
+    }
+    func on_enter(contact:Nodes.BodyContact2D) {
+        self.entered.append(contact)
+        if self.remove_visitor { if let node = contact.node { self.remove_child(node) } }
+        if self.disable_area { self.area.enable(false) }
+    }
+    func on_exit(contact:Nodes.BodyContact2D) { self.exited.append(contact) }
+}
+
+test "areas emit one entry and exit per body after each actual step in either plugin order" {
+    for nodes_first in [false, true] {
+        var root = TriggerScene()
+        var visitor = Nodes.StaticBody2D(box(), "Visitor")
+        root.add_child(visitor)
+        var app = application(root, nodes_first)
+        frame(app, 0.05)
+        assert(root.entered.is_empty())
+        frame(app, 0.26)
+        assert(root.entered.count() == 1 && root.exited.is_empty())
+        assert(same_node(root.entered[0].node, visitor))
+        assert(root.entered[0].body.same_body(body(app, visitor)))
+        assert(root.area.overlapping_bodies().count() == 1)
+        visitor.position = Math.Vec2(1000.0, 0.0)
+        frame(app)
+        assert(root.exited.count() == 1 && root.area.overlapping_bodies().is_empty())
+        frame(app)
+        assert(root.exited.count() == 1)
+        app.run_schedule(Application.Schedule.shutdown)
+    }
+}
+
+test "area snapshots deduplicate compound bodies and identify raw physics visitors without a node" {
+    var root = TriggerScene()
+    var app = application(root)
+    var physics = app.resources().get<Physics.World2D>()
+    var visitor = physics.create_rigid_body(Physics.RigidBody2DSettings()
+        ..body_type = Physics.BodyType2D.fixed
+        ..create_implicit_collider = false)
+    physics.create_collider(visitor, Physics.Collider2DSettings()..shape = box())
+    physics.create_collider(visitor, Physics.Collider2DSettings()..shape = box())
+    frame(app)
+    assert(root.entered.count() == 1 && root.entered[0].node == null)
+    assert(root.entered[0].body.same_body(visitor))
+    physics.destroy_rigid_body(visitor)
+    frame(app)
+    assert(root.exited.count() == 1 && !root.exited[0].body.is_valid())
+    assert(root.exited[0].body.same_body(visitor))
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+test "trigger handlers may remove a body between catch-up steps with immediate or deferred delivery" {
+    let deliveries:Nodes.EventDelivery[] = [Nodes.EventDelivery.immediate, Nodes.EventDelivery.deferred]
+    for delivery in deliveries {
+        var root = TriggerScene()..remove_visitor = true
+        root.delivery = delivery
+        var visitor = Nodes.StaticBody2D(box(), "Visitor")
+        root.add_child(visitor)
+        var app = application(root)
+        frame(app, 0.3)
+        assert(root.entered.count() == 1 && root.exited.count() == 1)
+        assert(!root.entered[0].body.is_valid() && !visitor.is_inside_tree())
+        app.run_schedule(Application.Schedule.shutdown)
+    }
+}
+
+test "disabling an area inside an entry handler only exits bodies whose entry was delivered" {
+    var root = TriggerScene()..disable_area = true
+    root.add_child(Nodes.StaticBody2D(box(), "One"))
+    root.add_child(Nodes.StaticBody2D(box(), "Two"))
+    var app = application(root)
+    frame(app)
+    assert(root.entered.count() == 1 && root.exited.count() == 1)
+    assert(root.entered[0].body.same_body(root.exited[0].body))
+    assert(root.area.overlapping_bodies().is_empty())
+    root.disable_area = false
+    root.area.enable(true)
+    frame(app)
+    assert(root.entered.count() == 3)
+    root.remove_child(root.area)
+    frame(app)
+    assert(root.exited.count() == 3)
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+class Traveler:Nodes.CharacterBody2D {
+    var walk:bool = false
+    override func on_physics_process(delta:float) { if self.walk { self.move() } }
+}
+
+test "areas filter bodies and ignore other sensors without blocking characters" {
+    var root = TriggerScene()
+    var filtered = Nodes.StaticBody2D(box(), "Filtered", Physics.CollisionFilter2D(category_bits:2, mask_bits:2))
+    root.add_child(filtered)
+    root.add_child(Nodes.Area2D(box(), "OtherArea"))
+    var player = Traveler()..velocity = Math.Vec2(3000.0, 0.0)
+    player.position = Math.Vec2(0.0, 500.0)
+    root.add_child(player)
+    var app = application(root)
+    frame(app)
+    assert(root.entered.is_empty())
+    filtered.enable(false)
+    player.position = Math.Vec2()
+    frame(app)
+    assert(root.entered.count() == 1 && same_node(root.entered[0].node, player))
+    assert(player.motion() == null)
+    player.walk = true
+    frame(app)
+    assert(!player.motion()!.collided() && player.position.x > 299.0)
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+class CastScene:Nodes.Node {
+    var ray:Nodes.Raycast2D
+    var manual:bool = false
+    init():super("Root") {
+        self.ray = Nodes.Raycast2D(Math.Vec2(1000.0, 0.0))
+        self.add_child(self.ray)
+        self.set_process(true)
+        self.process_mode = Application.ProcessMode.always
+    }
+    override func on_process(delta:float) { if self.manual { self.ray.cast() } }
+}
+
+func obstacle(name:str, x:float, category:uint64 = 1) Nodes.StaticBody2D {
+    return Nodes.StaticBody2D(box(), name, Physics.CollisionFilter2D(category_bits:category))
+        ..position = Math.Vec2(x, 0.0)
+}
+
+test "raycasts select the nearest solid hit in scene units and apply masks and exceptions" {
+    var root = CastScene()
+    var far = obstacle("Far", 600.0, 2)
+    var near = obstacle("Near", 300.0)
+    root.add_child(far)
+    root.add_child(near)
+    root.add_child(Nodes.Area2D(box(), "Sensor")..position = Math.Vec2(150.0, 0.0))
+    var app = application(root)
+    frame(app)
+    assert(same_node(root.ray.hit!.body.node, near))
+    assert(root.ray.hit!.point.nearly_equal(Math.Vec2(250.0, 0.0), 0.001))
+    assert(root.ray.hit!.normal.nearly_equal(Math.Vec2(-1.0, 0.0), 0.001))
+    assert(Math.nearly_equal(root.ray.hit!.fraction, 0.25, 0.001))
+    root.ray.exceptions = [body(app, near)]
+    frame(app)
+    assert(same_node(root.ray.hit!.body.node, far))
+    root.ray.exceptions = []
+    root.ray.query_filter = Physics.QueryFilter2D(mask_bits:2)
+    frame(app)
+    assert(same_node(root.ray.hit!.body.node, far))
+    root.ray.query_filter = Physics.QueryFilter2D()
+    root.ray.include_sensors = true
+    frame(app)
+    assert(root.ray.hit!.collider.is_sensor())
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+test "raycasts transform a local target and refresh misses disable state and paused manual casts" {
+    var root = CastScene()
+    root.ray.rotation = Math.pi() * 0.5
+    root.ray.scale = Math.Vec2(0.5, 2.0)
+    var target = obstacle("Target", 0.0)..position = Math.Vec2(0.0, 300.0)
+    root.add_child(target)
+    var app = application(root)
+    frame(app)
+    assert(same_node(root.ray.hit!.body.node, target))
+    assert(root.ray.hit!.point.nearly_equal(Math.Vec2(0.0, 250.0), 0.001))
+    assert(Math.nearly_equal(root.ray.hit!.fraction, 0.5, 0.002))
+    {
+        var resources = app.resources()
+        var simulation = resources.get_mut<Application.Simulation>()
+        simulation.pause()
+    }
+    root.ray.target_position = Math.Vec2()
+    frame(app, 1.0)
+    assert(root.ray.hit != null)
+    root.manual = true
+    frame(app, 1.0)
+    assert(root.ray.hit == null)
+    root.ray.target_position = Math.Vec2(1000.0, 0.0)
+    frame(app, 1.0)
+    assert(root.ray.hit != null)
+    root.ray.enable(false)
+    frame(app)
+    assert(root.ray.hit == null)
+    app.run_schedule(Application.Schedule.shutdown)
+}
+
+test "raycasts can exclude the nearest ancestor physics body" {
+    var root = Nodes.Node("Root")
+    var parent = obstacle("Parent", 300.0)
+    var ray = Nodes.Raycast2D(Math.Vec2(1000.0, 0.0))..position = Math.Vec2(-300.0, 0.0)
+    parent.add_child(ray)
+    root.add_child(parent)
+    var far = obstacle("Far", 600.0)
+    root.add_child(far)
+    var app = application(root)
+    frame(app)
+    assert(same_node(ray.hit!.body.node, far))
+    ray.exclude_parent = false
+    frame(app)
+    assert(same_node(ray.hit!.body.node, parent))
+    root.remove_child(parent)
+    frame(app)
+    assert(ray.hit == null)
+    app.run_schedule(Application.Schedule.shutdown)
+}

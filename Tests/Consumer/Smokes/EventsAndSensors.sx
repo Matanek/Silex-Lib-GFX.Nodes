@@ -1,0 +1,63 @@
+use GFX.Application
+use GFX.Nodes
+use GFX.Physics
+use GFX.Plugins
+use STD.Math
+
+class Score:Nodes.Node {
+    private var updates:Nodes.EventEmitter<int> = Nodes.EventEmitter<int>()
+    var score_changed:Nodes.Event<int> { get { return self.updates.event } }
+    private var value:int = 0
+
+    func add(points:int) {
+        self.value += points
+        self.updates.emit(self.value)
+    }
+}
+
+class ScoreDisplay:Nodes.Node {
+    private var score:Score
+    init(score:Score):super("ScoreDisplay") { self.score = score }
+
+    override func on_ready() {
+        self.listen(self.score.score_changed, self.show_score)
+    }
+
+    func show_score(value:int) { print("Score : $(value)") }
+}
+
+class Checkpoint:Nodes.Area2D {
+    init():super(Physics.Shape2D.box(Physics.Box2D(Math.Vec2(2.0, 1.0)))) {}
+
+    override func on_ready() {
+        self.listen(self.body_entered, self.activate)
+    }
+
+    func activate(contact:Nodes.BodyContact2D) {
+        if let node = contact.node { print("Entrée de $(node.name())") }
+    }
+}
+
+func main() {
+    var root = Score()
+    var checkpoint = Checkpoint()
+    var ray = Nodes.Raycast2D(Math.Vec2(20.0, 0.0))..position = Math.Vec2(-10.0, 0.0)
+    root.add_child(ScoreDisplay(root))
+    root.add_child(checkpoint)
+    root.add_child(Nodes.StaticBody2D(Physics.Shape2D.box(Physics.Box2D(Math.Vec2(1.0))), "Visitor"))
+    root.add_child(ray)
+    var app = Application()..add_plugin(Plugins.Physics2D())..add_plugin(Plugins.Nodes(root))
+    app.run_schedule(Application.Schedule.startup)
+    root.add(2)
+    {
+        var resources = app.resources()
+        var time = resources.get_mut<Application.FrameTime>()
+        time.delta = 0.02
+    }
+    app.run_schedule(Application.Schedule.update)
+    app.run_schedule(Application.Schedule.post_update)
+    assert(checkpoint.overlapping_bodies().count() == 1)
+    assert(ray.hit!.body.node!.name() == "Visitor")
+    app.run_schedule(Application.Schedule.shutdown)
+    assert(app.resources().get<Physics.World2D>().body_count() == 0)
+}

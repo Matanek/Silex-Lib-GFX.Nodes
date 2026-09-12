@@ -4,6 +4,9 @@
 ECS. Every mounted node owns an ECS entity; the 2D and 3D scene packages remain
 the owners of their components and renderers.
 
+See also [Communicate between Nodes](Events.md) and
+[Detect with Area2D and Raycast2D](Sensors2D.md).
+
 ## Principle
 
 For characters and obstacles, see
@@ -18,7 +21,9 @@ Each node class represents one capability:
 - `Sprite2D` and `Sprite3D` add a sprite using a `GFX.Assets` image;
 - `Canvas2D` adds a `GFX.Canvas` vector drawing rendered by Scene2D;
 - `CharacterBody2D` and `StaticBody2D` add collision-aware motion and fixed
-  obstacles, using `Plugins.Physics2D`.
+  obstacles, using `Plugins.Physics2D`;
+- `Area2D` detects overlaps without blocking bodies;
+- `Raycast2D` finds the first obstacle along a segment.
 
 The generic `Node` has no dimension and carries no transform. A spatial node
 composes its transform with its immediate parent when that parent belongs to

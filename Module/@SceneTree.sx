@@ -1,9 +1,27 @@
 use GFX.Application
 use GFX.ECS
 use GFX.Input
+use GFX.Physics
 use Interop.C
 
 public class SceneTree {
+    private var physics_observers:Node[] = []
+    private var physics_bodies:Node[] = []
+    private var sensor_snapshot:Physics.SensorOverlap2D[] = []
+    private var deferred_events:DeferredEvent[] = []
+
+    module func queue_event(event:DeferredEvent) { self.deferred_events.append(event) }
+
+    private func flush_events(world:&ECS.World) {
+        // One batch per boundary. Events emitted by deferred handlers wait for
+        // the next boundary, so a feedback loop cannot monopolize this pass.
+        var pending = self.deferred_events
+        self.deferred_events = []
+        for var event in pending { event.dispatch() }
+        self.flush_mutations(world)
+        self.flush_synchronizations(world)
+    }
+
     private var callback_resources_address:uint = 0
     private var current_input:Input.State? = null
     private var current_root:Node
@@ -58,6 +76,44 @@ public class SceneTree {
         self.end_callbacks()
     }
 
+    module func register_physics_body(node:Node) { self.physics_bodies.append(node) }
+    module func register_physics_observer(node:Node) { self.physics_observers.append(node) }
+
+    module func body_contact(body:Physics.RigidBody2D) BodyContact2D {
+        var world = self.resources().get<ECS.World>()
+        for node in self.physics_bodies {
+            if !node.can_process(self) { continue }
+            let entity = node.entity()!
+            if world.has<Physics.PhysicsBody2D>(entity) {
+                if let candidate = world.get<Physics.PhysicsBody2D>(entity).body() {
+                    if body.same_body(candidate) { return BodyContact2D(body, node) }
+                }
+            }
+        }
+        return BodyContact2D(body, null)
+    }
+
+    module func complete_physics(callback_resources:Application.Resources) {
+        if !self.current_running { return }
+        var resources = callback_resources
+        let address = C.object_address(resources)
+        var world = resources.get_mut<ECS.World>()
+        self.begin_callbacks(address)
+        // Copy the physics snapshot once per completed step for every area.
+        self.resources().get<Physics.World2D>().write_sensor_overlaps(self.sensor_snapshot)
+        let count = self.physics_observers.count()
+        var index = 0
+        while index < count {
+            var node = self.physics_observers[index]
+            if node.can_process(self) { node.physics_step_completed(self.sensor_snapshot) }
+            index++
+        }
+        self.flush_mutations(world)
+        self.flush_synchronizations(world)
+        self.flush_events(world)
+        self.end_callbacks()
+    }
+
     // The calling system owns the store for this synchronous lifecycle pass.
     // Keep a non-owning identity only until end_callbacks: retaining the store
     // here would make every node cycle check traverse all application resources.
@@ -97,6 +153,7 @@ public class SceneTree {
         self.current_root.mount_subtree(world, self)
         self.flush_mutations(world)
         self.flush_synchronizations(world)
+        self.flush_events(world)
     }
 
     module func process(delta:float, paused:bool, world:&ECS.World) {
@@ -119,6 +176,7 @@ public class SceneTree {
         }
         self.flush_mutations(world)
         self.flush_synchronizations(world)
+        self.flush_events(world)
         self.current_frame++
     }
 
@@ -133,6 +191,10 @@ public class SceneTree {
         self.current_physics_nodes.clear()
         self.pending_detachments.clear()
         self.current_input = null
+        self.deferred_events.clear()
+        self.physics_observers.clear()
+        self.physics_bodies.clear()
+        self.sensor_snapshot.clear()
     }
 
     module func input() @Input.State {
@@ -178,6 +240,12 @@ public class SceneTree {
         for node in processing {
             if node.can_process(self) { self.current_process_nodes.append(node) }
         }
+        var observers = self.physics_observers
+        self.physics_observers = []
+        for node in observers { if node.can_process(self) { self.physics_observers.append(node) } }
+        var bodies = self.physics_bodies
+        self.physics_bodies = []
+        for node in bodies { if node.can_process(self) { self.physics_bodies.append(node) } }
         var dirty = self.current_dirty_nodes
         var physics = self.current_physics_nodes
         self.current_physics_nodes = []

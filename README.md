@@ -32,6 +32,11 @@ changes are dirty-tracked: external changes synchronize on the next update,
 while changes made by one `on_process` callback are coalesced into one ECS
 write per affected component.
 
+`Area2D` provides nonblocking body triggers and `Raycast2D` caches the nearest
+filtered hit after each physics step. Nodes communicate through typed events:
+`self.listen(area.body_entered, self.on_body_entered)` ties the subscription
+to the receiving Node, with automatic disconnection on removal.
+
 ## Documentation
 
 `CharacterBody2D` provides controller-driven capsule motion with

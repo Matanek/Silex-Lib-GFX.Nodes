@@ -1,11 +1,43 @@
 use GFX.Application
 use GFX.ECS
 use GFX.Input
+use GFX.Physics
 use STD.Text
 
 // Dimension-independent scene-tree identity and lifecycle.
 
 public class Node {
+    private var event_connections:Connection[] = []
+
+    func listen<T>(event:Event<T>, callback:func(T), delivery:EventDelivery = EventDelivery.immediate) Connection {
+        if !self.current_inside_tree || self.pending_detachment {
+            panic("Node.listen requires a mounted node; connect from on_ready")
+        }
+        var index = 0
+        while index < self.event_connections.count() {
+            if !self.event_connections[index].is_connected() { self.event_connections.take(index) }
+            else { index++ }
+        }
+        var connection = event.connect(self, callback, delivery)
+        self.event_connections.append(connection)
+        return connection
+    }
+
+    module func queue_event(event:DeferredEvent) {
+        if self.current_inside_tree && !self.pending_detachment {
+            self.current_tree!.queue_event(event)
+        }
+    }
+
+    module func register_physics_body() { self.current_tree!.register_physics_body(self) }
+    module func register_physics_observer() { self.current_tree!.register_physics_observer(self) }
+    module func deactivate_components() {}
+
+    module func physics_step_completed(overlaps:Physics.SensorOverlap2D[]) {}
+    module func body_contact(body:Physics.RigidBody2D) BodyContact2D {
+        return self.current_tree!.body_contact(body)
+    }
+
     private var current_enabled:bool = true
     private var effective_enabled:bool = true
     private var activation_notified:bool = false
@@ -37,7 +69,7 @@ public class Node {
         if !self.activation_ready || self.activation_notified == self.effective_enabled { return }
         self.activation_notified = self.effective_enabled
         if self.activation_notified { self.on_enable() }
-        else { self.on_disable() }
+        else { self.deactivate_components(); self.on_disable() }
     }
 
     private var current_process_mode:Application.ProcessMode = Application.ProcessMode.inherit
@@ -393,6 +425,7 @@ public class Node {
         world.enable(self.current_entity!, false)
         if self.activation_notified {
             self.activation_notified = false
+            self.deactivate_components()
             self.on_disable()
         }
         self.exit_tree()
@@ -448,6 +481,8 @@ public class Node {
     private func suspend_subtree() {
         if self.pending_detachment { return }
         self.pending_detachment = true
+        for connection in self.event_connections { connection.disconnect() }
+        self.event_connections.clear()
         var children = self.mounted_children
         for var child in children { child.suspend_subtree() }
     }

@@ -18,6 +18,7 @@ public struct Plugin:Application.Plugin {
         application.add_plugin(Application.Time())
         application.add_resource(SceneTree(self.root_node))
         Physics.Physics2DStep.before_step(application, update_physics_nodes)
+        Physics.Physics2DStep.after_step(application, complete_physics_nodes)
         application.add_system(Application.Schedule.startup, bind_node_input)
         application.add_system(Application.Schedule.startup, start_nodes)
         application.add_system(Application.Schedule.update, update_nodes, process_mode:GFX.Application.ProcessMode.always)
@@ -30,6 +31,13 @@ func update_physics_nodes(application:Application, delta:float) {
     var callback_resources = application.resources()
     var tree = resources.get_mut<SceneTree>()
     tree.process_physics(delta, callback_resources)
+}
+
+func complete_physics_nodes(application:Application, delta:float) {
+    var resources = application.resources()
+    var callback_resources = application.resources()
+    var tree = resources.get_mut<SceneTree>()
+    tree.complete_physics(callback_resources)
 }
 
 func bind_node_input(application:Application) {

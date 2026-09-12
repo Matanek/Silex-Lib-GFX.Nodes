@@ -96,6 +96,7 @@ public class CharacterBody2D:Node2D {
         self.require_physics_transform(world)
         self.last_move = null
         world.insert(entity, Physics.PhysicsBody2D(self.body_settings))
+        self.register_physics_body()
     }
 
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {
