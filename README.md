@@ -12,7 +12,8 @@ The generic `Node` owns tree structure and lifecycle only. `Node2D` and
 `Node3D` add their respective scene transforms. `Camera2D`, `Camera3D`,
 `Sprite2D`, and `Sprite3D` project object properties into the corresponding
 scene components, while `Canvas2D` owns vector drawing commands backed by
-`GFX.Canvas`.
+`GFX.Canvas`. `Canvas3D` places the same drawing API on a 3D panel with
+independent raster density, world size, and a Scene3D panel material.
 
 Children can be added, removed and reparented at runtime, including from
 lifecycle callbacks. Object links change immediately; ECS mounting and teardown

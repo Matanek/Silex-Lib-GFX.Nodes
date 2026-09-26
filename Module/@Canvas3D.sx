@@ -1,0 +1,144 @@
+use GFX.Canvas
+use GFX.ECS
+use GFX.Scene2D.Canvas.TextMode
+use GFX.Scene3D
+use STD.Math
+
+public class Canvas3D:Node3D {
+    private var current_panel:Scene3D.CanvasPanel
+    private var current_material:Scene3D.CanvasPanelMaterial
+    private var panel_dirty:bool = false
+    private var material_dirty:bool = false
+
+    var frame:Canvas.Rect {
+        get { return self.current_panel.frame }
+        set(value) {
+            if self.current_panel.frame == value { return }
+            self.resize(value, self.density, self.world_size)
+        }
+    }
+
+    var density:float {
+        get { return self.current_panel.density }
+        set(value) {
+            if self.current_panel.density == value { return }
+            self.resize(self.frame, value, self.world_size)
+        }
+    }
+
+    var world_size:Math.Vec2 {
+        get { return self.current_panel.world_size }
+        set(value) {
+            if self.current_panel.world_size == value { return }
+            self.resize(self.frame, self.density, value)
+        }
+    }
+
+    var text_mode:TextMode {
+        get { return self.current_panel.text_mode }
+        set(value) {
+            if self.current_panel.text_mode == value { return }
+            self.current_panel.text_mode = value
+            self.panel_changed()
+        }
+    }
+
+    var visible:bool {
+        get { return self.current_panel.visible }
+        set(value) {
+            if self.current_panel.visible == value { return }
+            self.current_panel.visible = value
+            self.panel_changed()
+        }
+    }
+
+    var casts_shadows:bool {
+        get { return self.current_panel.casts_shadows }
+        set(value) {
+            if self.current_panel.casts_shadows == value { return }
+            self.current_panel.casts_shadows = value
+            self.panel_changed()
+        }
+    }
+
+    var material:Scene3D.CanvasPanelMaterial {
+        get { return self.current_material }
+        set(value) {
+            if self.current_material == value { return }
+            self.current_material = value
+            self.material_dirty = true
+            self.changed()
+        }
+    }
+
+    init(
+        name:str = "Canvas3D",
+        frame:Canvas.Rect = Canvas.Rect(Math.Vec2(), Math.Vec2(320.0, 180.0)),
+        density:float = 1.0,
+        world_size:Math.Vec2 = Math.Vec2(3.2, 1.8),
+        material:Scene3D.CanvasPanelMaterial = Scene3D.CanvasPanelMaterial(),
+        text_mode:TextMode = TextMode.automatic,
+        visible:bool = true,
+        casts_shadows:bool = true
+    ):super(name) {
+        var panel = Scene3D.CanvasPanel(
+            Canvas.Canvas(), frame, density, world_size, text_mode
+        )
+        panel.visible = visible
+        panel.casts_shadows = casts_shadows
+        self.current_panel = panel
+        self.current_material = material
+    }
+
+    func canvas() Canvas.Canvas { return self.current_panel.canvas() }
+
+    func paint(callback:func(&Canvas.Painter)) {
+        var drawing = self.canvas()
+        drawing.paint(callback)
+    }
+
+    func clear() {
+        var drawing = self.canvas()
+        drawing.clear()
+    }
+
+    func command_count() int { return self.canvas().command_count() }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        self.require_scene_3d()
+        world.insert(entity, self.current_panel)
+        world.insert(entity, self.current_material)
+        self.panel_dirty = false
+        self.material_dirty = false
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        if self.panel_dirty {
+            world.insert(entity, self.current_panel)
+            self.panel_dirty = false
+        }
+        if self.material_dirty {
+            world.insert(entity, self.current_material)
+            self.material_dirty = false
+        }
+    }
+
+    private func resize(frame:Canvas.Rect, density:float, world_size:Math.Vec2) {
+        // Reuse the ECS component's validation before publishing new dimensions.
+        var panel = Scene3D.CanvasPanel(
+            self.canvas(), frame, density, world_size, self.text_mode
+        )
+        panel.visible = self.visible
+        panel.casts_shadows = self.casts_shadows
+        self.current_panel = panel
+        self.panel_changed()
+    }
+
+    private func panel_changed() {
+        if self.panel_dirty { return }
+        self.panel_dirty = true
+        self.changed()
+    }
+}

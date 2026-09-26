@@ -1,0 +1,94 @@
+use GFX.Application
+use GFX.Canvas
+use GFX.Color
+use GFX.ECS
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Rendering
+use GFX.Scene3D
+use STD.Math
+
+class PanelRoot:Nodes.Node {
+    var panel:Nodes.Canvas3D
+    var frames:int = 0
+
+    init():super("Root") {
+        self.panel = Nodes.Canvas3D(
+            frame:Canvas.Rect(Math.Vec2(), Math.Vec2(48.0)),
+            world_size:Math.Vec2(2.0),
+            material:Scene3D.CanvasPanelMaterial.unlit()
+        )
+    }
+
+    override func on_process(delta:float) {
+        if self.panel.parent() != null { return }
+        self.panel.paint(func(painter:&Canvas.Painter) {
+            painter.fill(Canvas.Circle(Math.Vec2(24.0), 18.0), Canvas.Fill.solid(Color.cyan_300()))
+        })
+        self.add_child(self.panel)
+        self.set_process(false)
+    }
+}
+
+func add_camera(world:&ECS.World) {
+    world.spawn(ECS.EntityRecipe()
+        ..with(Scene3D.Transform(position:Math.Vec3(0.0, 0.0, 5.0)))
+        ..with(Scene3D.Camera()))
+}
+
+func inspect_panel(
+    root:&PanelRoot,
+    panels:@Scene3D.CanvasPanels,
+    renderer:@Rendering.Renderer,
+    controller:&Application.Controller
+) {
+    root.frames++
+    let updates = panels.stats().surface_updates
+    if root.frames <= 3 { assert(updates == 1) }
+    elif root.frames == 4 { assert(updates == 2) }
+    else { assert(updates == 3) }
+    if root.frames == 6 || root.frames == 8 {
+        assert(renderer.stats().draw_calls() == 0)
+    } else {
+        assert(renderer.stats().draw_calls() > 0)
+    }
+    if root.frames == 1 {
+        root.panel.position = Math.Vec3(0.25, 0.0, 0.0)
+    } elif root.frames == 2 {
+        root.panel.world_size = Math.Vec2(2.5)
+        root.panel.material.albedo = Color.rose_300()
+    } elif root.frames == 3 {
+        root.panel.paint(func(painter:&Canvas.Painter) {
+            painter.fill(Canvas.Rect(Math.Vec2(4.0), Math.Vec2(8.0)), Canvas.Fill.solid(Color.white()))
+        })
+    } elif root.frames == 4 {
+        root.panel.density = 2.0
+    } elif root.frames == 5 {
+        root.panel.enable(false)
+    } elif root.frames == 6 {
+        root.panel.enable(true)
+    } elif root.frames == 7 {
+        root.panel.visible = false
+    } elif root.frames == 8 {
+        root.panel.visible = true
+    } else {
+        controller.stop()
+    }
+}
+
+test "late Canvas3D activates rendering and retains surfaces across placement and activation changes" {
+    var root = PanelRoot()
+    var app = Application()
+        ..add_resource(root)
+        ..add_plugin(Plugins.Window(Plugins.Window.Settings()
+            ..title = "Canvas3D consumer"..width = 64..height = 64..hidden = true))
+        ..add_plugin(Plugins.Nodes(root))
+        ..add_system(Application.Schedule.startup, add_camera)
+        ..add_after_system(Application.Schedule.render, inspect_panel)
+    assert(!app.has_plugin("GFX.Scene3D.Plugin"))
+    assert(app.run() == 0)
+    assert(app.has_plugin("GFX.Scene3D.Plugin"))
+    assert(!app.has_plugin("GFX.Scene2D.Plugin"))
+    assert(root.frames == 9)
+    assert(root.panel.entity() == null)
+}

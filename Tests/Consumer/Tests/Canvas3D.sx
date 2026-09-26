@@ -1,0 +1,110 @@
+use GFX.Application
+use GFX.Canvas
+use GFX.Color
+use GFX.ECS
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Scene2D
+use GFX.Scene3D
+use STD.Math
+
+func paint_marker(painter:&Canvas.Painter) {
+    painter.fill(Canvas.Circle(Math.Vec2(24.0), 18.0), Canvas.Fill.solid(Color.cyan_300()))
+}
+
+test "Canvas3D owns an independent drawing and material by default" {
+    var first = Nodes.Canvas3D()
+    var second = Nodes.Canvas3D()
+    first.paint(paint_marker)
+    first.material.roughness = 0.8
+    assert(first.command_count() == 1)
+    assert(second.command_count() == 0)
+    assert(second.material.roughness == 0.5)
+    assert(first.frame.size == Math.Vec2(320.0, 180.0))
+    assert(first.world_size == Math.Vec2(3.2, 1.8))
+    assert(first.density == 1.0)
+    assert(first.visible && first.casts_shadows)
+    assert(reflect(first).types[1] == "GFX.Nodes.Node3D")
+    var drawing = first.canvas()
+    drawing.clear()
+    assert(first.command_count() == 0)
+}
+
+test "Canvas3D synchronizes its ECS panel and survives deactivation and reparenting" {
+    var left = Nodes.Node3D("Left", Math.Vec3(10.0))
+    var right = Nodes.Node3D("Right", Math.Vec3(20.0))
+    var panel = Nodes.Canvas3D(
+        frame:Canvas.Rect(Math.Vec2(), Math.Vec2(48.0, 32.0)),
+        density:1.5,
+        world_size:Math.Vec2(3.0, 2.0),
+        material:Scene3D.CanvasPanelMaterial.unlit(),
+        text_mode:Scene2D.Canvas.TextMode.coverage,
+        casts_shadows:false
+    )
+    panel.position = Math.Vec3(2.0)
+    panel.paint(paint_marker)
+    left.add_child(panel)
+    var root = Nodes.Node()..add_child(left)..add_child(right)
+    var app = Application()
+        ..add_plugin(Plugins.Window(Plugins.Window.Settings()..hidden = true..width = 64..height = 64))
+        ..add_plugin(Plugins.Nodes(root))
+    app.run_schedule(Application.Schedule.startup)
+    let original = panel.entity()!
+    var resources = app.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    assert(app.has_plugin("GFX.Scene3D.Plugin"))
+    assert(!app.has_plugin("GFX.Scene2D.Plugin"))
+    assert(!panel.is_processing())
+    assert(world.has<Scene3D.CanvasPanel>(original))
+    assert(world.has<Scene3D.CanvasPanelMaterial>(original))
+    assert(!world.has<Scene2D.Canvas>(original))
+    assert(world.get<Scene3D.Transform>(original).position == Math.Vec3(12.0))
+    assert(world.get<Scene3D.CanvasPanel>(original).canvas_revision() == panel.canvas().revision())
+    assert(world.get<Scene3D.CanvasPanel>(original).density == 1.5)
+    assert(world.get<Scene3D.CanvasPanelMaterial>(original).unlit)
+
+    panel.visible = false
+    panel.frame = Canvas.Rect(Math.Vec2(4.0), Math.Vec2(96.0, 64.0))
+    panel.density = 2.0
+    panel.world_size = Math.Vec2(6.0, 4.0)
+    panel.text_mode = Scene2D.Canvas.TextMode.vector
+    var material = Scene3D.CanvasPanelMaterial(alpha:Scene3D.AlphaMode.mask, alpha_cutoff:0.3)
+    panel.material = material
+    assert(world.get<Scene3D.CanvasPanel>(original).visible)
+    app.run_schedule(Application.Schedule.update)
+    {
+        let component = world.get<Scene3D.CanvasPanel>(original)
+        assert(!component.visible && !component.casts_shadows)
+        assert(component.frame == panel.frame)
+        assert(component.density == 2.0)
+        assert(component.world_size == Math.Vec2(6.0, 4.0))
+        assert(component.text_mode == Scene2D.Canvas.TextMode.vector)
+        assert(component.canvas().command_count() == 1)
+    }
+    assert(world.get<Scene3D.CanvasPanelMaterial>(original).alpha_cutoff == 0.3)
+    material.roughness = 0.9
+    assert(world.get<Scene3D.CanvasPanelMaterial>(original).roughness == 0.9)
+    panel.clear()
+    assert(world.get<Scene3D.CanvasPanel>(original).canvas().command_count() == 0)
+    panel.paint(paint_marker)
+
+    left.enable(false)
+    app.run_schedule(Application.Schedule.update)
+    assert(!world.is_enabled(original))
+    panel.visible = true
+    panel.casts_shadows = true
+    left.remove_child(panel)
+    right.add_child(panel)
+    app.run_schedule(Application.Schedule.update)
+    assert(!world.is_alive(original))
+    assert(world.is_enabled(panel.entity()!))
+    assert(panel.ready_count() == 2)
+    assert(world.get<Scene3D.Transform>(panel.entity()!).position == Math.Vec3(22.0))
+    assert(world.get<Scene3D.CanvasPanel>(panel.entity()!).visible)
+    assert(world.get<Scene3D.CanvasPanel>(panel.entity()!).casts_shadows)
+    assert(world.get<Scene3D.CanvasPanel>(panel.entity()!).canvas().command_count() == 1)
+    assert(world.get<Scene3D.CanvasPanelMaterial>(panel.entity()!).roughness == 0.9)
+    app.run_schedule(Application.Schedule.shutdown)
+    assert(panel.entity() == null)
+    assert(panel.command_count() == 1)
+}

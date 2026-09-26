@@ -5,7 +5,8 @@ GFX. Chaque nœud monté possède une entité ECS ; les scènes 2D et 3D contin
 de posséder leurs composants et leurs renderers.
 
 Voir aussi [Communiquer entre Nodes](Events.md) et
-[Détecter avec Area2D et Raycast2D](Sensors2D.md).
+[Détecter avec Area2D et Raycast2D](Sensors2D.md), ainsi que
+[Dessiner un panneau en 3D](Canvas3D.md).
 
 ## Principe
 
@@ -21,6 +22,7 @@ Chaque classe de nœud représente une fonctionnalité :
 - `Sprite2D` et `Sprite3D` ajoutent un sprite utilisant une image de
   `GFX.Assets` ;
 - `Canvas2D` ajoute un dessin vectoriel `GFX.Canvas` rendu par Scene2D ;
+- `Canvas3D` place un dessin Canvas sur un panneau rendu par Scene3D ;
 - `CharacterBody2D` et `StaticBody2D` ajoutent le déplacement avec collisions et
   les obstacles fixes, avec `Plugins.Physics2D` ;
 - `Area2D` détecte les chevauchements sans bloquer les corps ;
@@ -71,9 +73,10 @@ func main() {
 
 `Plugins.Nodes` installe le monde ECS, le temps et les magasins d’assets.
 Monter un `Camera2D`, `Sprite2D` ou `Canvas2D` active `Scene2D` ; monter un
-`Camera3D` ou `Sprite3D` active `Scene3D`. Chaque scène apporte ses dépendances
-Rendering, GPU, Window et Input. Les simples `Node`, `Node2D` et `Node3D`
-restent utilisables sans fenêtre ; la simulation `Physics2D` reste explicite.
+`Camera3D`, `Sprite3D` ou `Canvas3D` active `Scene3D`. Chaque scène apporte
+ses dépendances Rendering, GPU, Window et Input. Les simples `Node`, `Node2D`
+et `Node3D` restent utilisables sans fenêtre ; la simulation `Physics2D` reste
+explicite.
 
 Cela fonctionne pour l’arbre initial, les enfants créés dans `on_ready` et
 ceux ajoutés pendant l’exécution. Les plugins manquants démarrent à la fin de
