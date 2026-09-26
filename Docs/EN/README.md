@@ -63,17 +63,27 @@ func main() {
     root.add_child(player)
 
     Application()
-        ..add_plugin(Plugins.Window())
-        ..add_plugin(Plugins.Rendering())
-        ..add_plugin(Plugins.Scene2D())
         ..add_plugin(Plugins.Nodes(root))
         ..run()
 }
 ```
 
-`Plugins.Nodes` installs Application integration, the ECS world, and time.
-Rendering remains explicit: add `Plugins.Scene2D()` for 2D nodes,
-`Plugins.Scene3D()` for 3D nodes, or both.
+`Plugins.Nodes` installs the ECS world, time, and asset stores.
+Mounting a `Camera2D`, `Sprite2D`, or `Canvas2D` activates `Scene2D`; mounting
+a `Camera3D` or `Sprite3D` activates `Scene3D`. Each scene brings its Rendering,
+GPU, Window, and Input dependencies. Plain `Node`, `Node2D`, and `Node3D`
+remain usable without a window; `Physics2D` simulation remains explicit.
+
+This works for the initial tree, children created in `on_ready`, and children
+added during execution. Missing plugins start at the end of the current stage,
+before the next render. Activation does not repeat `on_ready` callbacks or
+restart existing services. Their resources become available after that stage,
+not inside the callback that just requested them.
+
+To customize the window or rendering, add `Plugins.Window` or `Plugins.Rendering`
+explicitly before `prepare()` or `run()`, in either order. Explicit settings are
+preserved. Graphical dependencies remain active until the context shuts down,
+even after the last visual node is removed.
 
 ## Cameras and sprites
 

@@ -29,6 +29,9 @@ public class Node {
         }
     }
 
+    module func require_scene_2d() { self.current_tree!.require_scene_2d() }
+    module func require_scene_3d() { self.current_tree!.require_scene_3d() }
+
     module func register_physics_body() { self.current_tree!.register_physics_body(self) }
     module func register_physics_observer() { self.current_tree!.register_physics_observer(self) }
     module func deactivate_components() {}

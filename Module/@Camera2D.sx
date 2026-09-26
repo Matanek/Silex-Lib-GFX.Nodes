@@ -60,6 +60,7 @@ public class Camera2D:Node2D {
 
     override func mount_components(world:&ECS.World, entity:ECS.Entity) {
         super.mount_components(world, entity)
+        self.require_scene_2d()
         world.insert(entity, self.current_camera)
         self.camera_dirty = false
     }

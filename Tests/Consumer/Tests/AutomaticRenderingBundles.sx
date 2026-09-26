@@ -1,0 +1,71 @@
+use GFX.Application
+use GFX.Assets.Image
+use GFX.Canvas
+use GFX.Color
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Rendering
+use GFX.Window
+use STD.Math
+
+class BundleRoot:Nodes.Node {
+    var exited:bool = false
+    init():super("Bundle") {}
+    override func on_ready() {
+        var canvas = Nodes.Canvas2D()
+        canvas.paint(func(painter:&Canvas.Painter) {
+            painter.fill(Canvas.Circle(Math.Vec2(), 8.0), Canvas.Fill.solid(Color.white()))
+        })
+        self.add_child(canvas)
+    }
+    override func on_exit_tree() {
+        var resources = self.resources()
+        assert(resources.has<Window>())
+        assert(resources.has<Rendering.Renderer>())
+        self.exited = true
+    }
+}
+
+func stop_bundle(application:Application) {
+    assert(application.resources().has<Window>())
+    var renderer = application.resources().get<Rendering.Renderer>()
+    // A shared renderer presents after its child Bundles have prepared the frame.
+    if renderer.stats().frames() == 0 { return }
+    assert(renderer.stats().draw_calls() > 0)
+    application.stop()
+}
+
+test "automatic node rendering owns or inherits a Bundle presentation" {
+    for shared in [false, true] {
+        var root = BundleRoot()
+        var parent = Application()
+        if shared {
+            parent.add_plugin(Plugins.Window(Plugins.Window.Settings()..hidden = true))
+            parent.add_plugin(Plugins.Scene2D())
+        }
+        var bundle = Application.Bundle(parent)
+            ..add_plugin(Plugins.Nodes(root))
+            ..add_after_system(Application.Schedule.render, stop_bundle)
+        parent.add_plugin(Plugins.BundleManager(bundle))
+        assert(parent.run() == 0)
+        assert(root.exited)
+        assert(parent.has_plugin("GFX.Scene2D.Plugin") == shared)
+    }
+}
+
+test "sprite nodes alone request their renderer" {
+    for dimension in [2, 3] {
+        var images = Image.Store()
+        let image = images.add(Image.solid(Color.white()))
+        var root = Nodes.Node()
+        if dimension == 2 { root.add_child(Nodes.Sprite2D(image)) }
+        else { root.add_child(Nodes.Sprite3D(image)) }
+        var app = Application()..add_resource(images)
+            ..add_plugin(Plugins.Window(Plugins.Window.Settings()..hidden = true))
+            ..add_plugin(Plugins.Nodes(root))
+        app.run_schedule(Application.Schedule.startup)
+        assert(app.has_plugin("GFX.Scene2D.Plugin") == (dimension == 2))
+        assert(app.has_plugin("GFX.Scene3D.Plugin") == (dimension == 3))
+        app.run_schedule(Application.Schedule.shutdown)
+    }
+}

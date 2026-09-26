@@ -1,10 +1,42 @@
 use GFX.Application
 use GFX.ECS
 use GFX.Input
+use GFX.Scene2D
+use GFX.Scene3D
 use GFX.Physics
 use Interop.C
 
 public class SceneTree {
+    private var scene_2d_requested:bool = false
+    private var scene_3d_requested:bool = false
+    private var scene_2d_pending:bool = false
+    private var scene_3d_pending:bool = false
+
+    module func require_scene_2d() {
+        if self.scene_2d_requested { return }
+        self.scene_2d_requested = true
+        self.scene_2d_pending = true
+    }
+
+    module func require_scene_3d() {
+        if self.scene_3d_requested { return }
+        self.scene_3d_requested = true
+        self.scene_3d_pending = true
+    }
+
+    module func install_required_plugins(application:&Application) {
+        if self.scene_2d_pending {
+            application.require_plugin(Scene2D.Plugin())
+            self.scene_2d_pending = false
+        }
+        if self.scene_3d_pending {
+            application.require_plugin(Scene3D.Plugin())
+            self.scene_3d_pending = false
+        }
+    }
+
+    module func has_input() bool { return self.current_input != null }
+
     private var physics_observers:Node[] = []
     private var physics_bodies:Node[] = []
     private var sensor_snapshot:Physics.SensorOverlap2D[] = []

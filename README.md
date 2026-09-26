@@ -37,6 +37,10 @@ filtered hit after each physics step. Nodes communicate through typed events:
 `self.listen(area.body_entered, self.on_body_entered)` ties the subscription
 to the receiving Node, with automatic disconnection on removal.
 
+Graphical nodes activate their scene and its Window, GPU, and Rendering plugins
+automatically, including when added from lifecycle callbacks. Explicit plugin
+settings are preserved. Plain spatial nodes remain usable without a window.
+
 ## Documentation
 
 `CharacterBody2D` provides controller-driven capsule motion with

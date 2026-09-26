@@ -96,6 +96,7 @@ public class Sprite3D:Node3D {
 
     override func mount_components(world:&ECS.World, entity:ECS.Entity) {
         super.mount_components(world, entity)
+        self.require_scene_3d()
         world.insert(entity, self.current_sprite)
         self.sprite_dirty = false
     }

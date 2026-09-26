@@ -64,17 +64,27 @@ func main() {
     root.add_child(player)
 
     Application()
-        ..add_plugin(Plugins.Window())
-        ..add_plugin(Plugins.Rendering())
-        ..add_plugin(Plugins.Scene2D())
         ..add_plugin(Plugins.Nodes(root))
         ..run()
 }
 ```
 
-`Plugins.Nodes` installe l’intégration Application, le monde ECS et le temps.
-Le renderer reste un choix explicite : ajouter `Plugins.Scene2D()` pour les
-nœuds 2D, `Plugins.Scene3D()` pour les nœuds 3D, ou les deux.
+`Plugins.Nodes` installe le monde ECS, le temps et les magasins d’assets.
+Monter un `Camera2D`, `Sprite2D` ou `Canvas2D` active `Scene2D` ; monter un
+`Camera3D` ou `Sprite3D` active `Scene3D`. Chaque scène apporte ses dépendances
+Rendering, GPU, Window et Input. Les simples `Node`, `Node2D` et `Node3D`
+restent utilisables sans fenêtre ; la simulation `Physics2D` reste explicite.
+
+Cela fonctionne pour l’arbre initial, les enfants créés dans `on_ready` et
+ceux ajoutés pendant l’exécution. Les plugins manquants démarrent à la fin de
+l’étape courante, avant le rendu suivant. Leur activation ne relance ni les
+callbacks `on_ready` ni les services déjà démarrés. Leurs ressources sont
+disponibles après cette étape, pas dans le callback qui vient de les demander.
+
+Pour personnaliser la fenêtre ou le rendu, ajoutez explicitement `Plugins.Window`
+ou `Plugins.Rendering` avant `prepare()` ou `run()`, dans l’ordre de votre choix.
+Les réglages explicites sont conservés. Les dépendances graphiques restent
+actives jusqu’à l’arrêt du contexte, même après le retrait du dernier nœud visuel.
 
 ## Caméras et sprites
 

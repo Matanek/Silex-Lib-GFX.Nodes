@@ -1,0 +1,163 @@
+use GFX.Application
+use GFX.Assets.Image
+use GFX.Canvas
+use GFX.Color
+use GFX.ECS
+use GFX.Input
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Rendering
+use GFX.Scene2D
+use GFX.Scene3D
+use GFX.Window
+use STD.Math
+
+class Root:Nodes.Node {
+    let dimension:int
+    let late:bool
+    var frames:int = 0
+    var exited:bool = false
+
+    init(dimension:int, late:bool = false):super("Root") {
+        self.dimension = dimension
+        self.late = late
+    }
+
+    override func on_ready() {
+        if !self.late { self.add_camera() }
+    }
+
+    override func on_process(delta:float) {
+        if self.late && self.frames == 0 { self.add_camera() }
+        if self.frames > 0 {
+            let input = self.input()
+        }
+        self.frames++
+    }
+
+    private func add_camera() {
+        if self.dimension == 2 { self.add_child(Nodes.Camera2D()) }
+        else { self.add_child(Nodes.Camera3D()) }
+    }
+
+    override func on_exit_tree() {
+        var resources = self.resources()
+        assert(resources.has<Window>())
+        assert(resources.has<Rendering.Renderer>())
+        self.exited = true
+    }
+}
+
+func stop_after_render(application:Application) {
+    var resources = application.resources()
+    let root = resources.get<Root>()
+    assert(resources.has<Window>())
+    assert(resources.has<Input.State>())
+    assert(resources.get<Rendering.Renderer>().stats().frames() >= 1)
+    if root.dimension == 2 {
+        assert(application.has_plugin("GFX.Scene2D.Plugin"))
+        assert(!application.has_plugin("GFX.Scene3D.Plugin"))
+    } else {
+        assert(application.has_plugin("GFX.Scene3D.Plugin"))
+        assert(!application.has_plugin("GFX.Scene2D.Plugin"))
+    }
+    if root.frames == 2 { application.stop() }
+}
+
+test "camera nodes install their own dimension with default window settings" {
+    for dimension in [2, 3] {
+        var root = Root(dimension)
+        var app = Application()..add_resource(root)..add_plugin(Plugins.Nodes(root))
+        app.add_after_system(Application.Schedule.render, stop_after_render)
+        assert(app.run() == 0)
+        assert(root.exited)
+    }
+}
+
+func check_window(window:@Window) {
+    assert(window.size() == Math.Vec2(96.0, 80.0))
+}
+
+test "late cameras preserve explicit window settings before or after Nodes" {
+    for dimension in [2, 3] {
+        for window_first in [false, true] {
+            var root = Root(dimension, true)
+            let window = Plugins.Window(Plugins.Window.Settings()
+                ..title = "Automatic node rendering"..width = 96..height = 80..hidden = true)
+            var app = Application()..add_resource(root)
+            if window_first { app.add_plugin(window) }
+            app.add_plugin(Plugins.Nodes(root))
+            if !window_first { app.add_plugin(window) }
+            app.add_after_system(Application.Schedule.render, check_window)
+            app.add_after_system(Application.Schedule.render, stop_after_render)
+            assert(app.run() == 0)
+            assert(root.exited)
+        }
+    }
+}
+
+class MixedRoot:Nodes.Node {
+    var renders:int = 0
+    let reverse:bool
+    init(reverse:bool):super("Mixed") { self.reverse = reverse }
+    override func on_ready() {
+        if self.reverse { self.add_overlay() }
+        else { self.add_3d() }
+    }
+    private func add_3d() {
+        self.add_child(Nodes.Camera3D()..position = Math.Vec3(0.0, 0.0, 5.0))
+        var resources = self.resources()
+        var images = resources.get_mut<Image.Store>()
+        self.add_child(Nodes.Sprite3D(images.add(Image.solid(Color.white()))))
+    }
+    override func on_process(delta:float) {
+        if self.renders != 1 { return }
+        if self.reverse { self.add_3d() }
+        else { self.add_overlay() }
+    }
+    private func add_overlay() {
+        var overlay = Nodes.Canvas2D()
+        overlay.paint(func(painter:&Canvas.Painter) {
+            painter.fill(Canvas.Circle(Math.Vec2(), 8.0), Canvas.Fill.solid(Color.white()))
+        })
+        self.add_child(overlay)
+    }
+}
+
+func inspect_mixed(application:Application) {
+    var resources = application.resources()
+    var root = resources.get_mut<MixedRoot>()
+    var rendering_resources = application.resources()
+    let renderer = rendering_resources.get<Rendering.Renderer>()
+    assert(renderer.stats().frames() == root.renders + 1)
+    assert(renderer.stats().draw_calls() >= 1)
+    if root.renders == 1 {
+        assert(application.has_plugin("GFX.Scene2D.Plugin"))
+        assert(application.has_plugin("GFX.Scene3D.Plugin"))
+        assert(renderer.stats().draw_calls() >= 2)
+        application.stop()
+    }
+    root.renders++
+}
+
+test "add either scene dimension to running Nodes without restarting the renderer" {
+    for reverse in [false, true] {
+        var root = MixedRoot(reverse)
+        var app = Application()..add_resource(root)
+            ..add_plugin(Plugins.Window(Plugins.Window.Settings()..hidden = true))
+            ..add_plugin(Plugins.Nodes(root))
+            ..add_after_system(Application.Schedule.render, inspect_mixed)
+        assert(app.run() == 0)
+        assert(root.renders == 2)
+    }
+}
+
+test "plain spatial nodes keep simulation free of graphical plugins" {
+    var root = Nodes.Node()..add_child(Nodes.Node2D())..add_child(Nodes.Node3D())
+    var app = Application()..add_plugin(Plugins.Nodes(root))
+    app.run_schedule(Application.Schedule.startup)
+    assert(!app.has_plugin("GFX.Window.Plugin"))
+    assert(!app.has_plugin("GFX.Scene2D.Plugin"))
+    assert(!app.has_plugin("GFX.Scene3D.Plugin"))
+    app.run_schedule(Application.Schedule.shutdown)
+}
