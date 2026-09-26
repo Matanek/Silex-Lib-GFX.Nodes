@@ -6,7 +6,8 @@ the owners of their components and renderers.
 
 See also [Communicate between Nodes](Events.md) and
 [Detect with Area2D and Raycast2D](Sensors2D.md), as well as
-[Draw a panel in 3D](Canvas3D.md).
+[Draw a panel in 3D](Canvas3D.md) and
+[Build a tile layer](TileMap2D.md).
 
 ## Principle
 
@@ -22,6 +23,7 @@ Each node class represents one capability:
 - `Sprite2D` and `Sprite3D` add a sprite using a `GFX.Assets` image;
 - `Canvas2D` adds a `GFX.Canvas` vector drawing rendered by Scene2D;
 - `Canvas3D` places a Canvas drawing on a panel rendered by Scene3D;
+- `TileMap2D` places a layer of square or rectangular tiles;
 - `CharacterBody2D` and `StaticBody2D` add collision-aware motion and fixed
   obstacles, using `Plugins.Physics2D`;
 - `Area2D` detects overlaps without blocking bodies;
@@ -71,8 +73,8 @@ func main() {
 ```
 
 `Plugins.Nodes` installs the ECS world, time, and asset stores.
-Mounting a `Camera2D`, `Sprite2D`, or `Canvas2D` activates `Scene2D`; mounting
-a `Camera3D`, `Sprite3D`, or `Canvas3D` activates `Scene3D`. Each scene brings
+Mounting a `Camera2D`, `Sprite2D`, `Canvas2D`, or `TileMap2D` activates
+`Scene2D`. Mounting a `Camera3D`, `Sprite3D`, or `Canvas3D` activates `Scene3D`. Each scene brings
 its Rendering, GPU, Window, and Input dependencies. Plain `Node`, `Node2D`,
 and `Node3D` remain usable without a window; `Physics2D` simulation remains
 explicit.

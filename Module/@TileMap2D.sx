@@ -1,0 +1,134 @@
+use GFX.Color
+use GFX.ECS
+use GFX.Scene2D
+use STD.Math
+
+public class TileMap2D:Node2D {
+    private var current_map:Scene2D.TileMap
+    private var map_dirty:bool = false
+
+    var color:Color {
+        get { return self.current_map.color }
+        set(value) {
+            if self.current_map.color == value { return }
+            self.current_map.color = value
+            self.map_changed()
+        }
+    }
+
+    var layer:int {
+        get { return self.current_map.layer }
+        set(value) {
+            if self.current_map.layer == value { return }
+            self.current_map.layer = value
+            self.map_changed()
+        }
+    }
+
+    var depth:float {
+        get { return self.current_map.depth }
+        set(value) {
+            if self.current_map.depth == value { return }
+            self.current_map.depth = value
+            self.map_changed()
+        }
+    }
+
+    var visible:bool {
+        get { return self.current_map.visible }
+        set(value) {
+            if self.current_map.visible == value { return }
+            self.current_map.visible = value
+            self.map_changed()
+        }
+    }
+
+    init(
+        atlas:Scene2D.TileAtlas,
+        columns:int,
+        rows:int,
+        name:str = "TileMap2D",
+        color:Color = Color.white(),
+        layer:int = 0,
+        depth:float = 0.0,
+        visible:bool = true
+    ):super(name) {
+        var tiles = Scene2D.TileMap(atlas, columns, rows)
+        tiles.color = color
+        tiles.layer = layer
+        tiles.depth = depth
+        tiles.visible = visible
+        self.current_map = tiles
+    }
+
+    func atlas() Scene2D.TileAtlas { return self.current_map.atlas() }
+    func columns() int { return self.current_map.columns() }
+    func rows() int { return self.current_map.rows() }
+    func size() Math.Vec2 { return self.current_map.size() }
+
+    func contains(column:int, row:int) bool { return self.current_map.contains(column, row) }
+    func tile(column:int, row:int) int? { return self.current_map.tile(column, row) }
+
+    func set(column:int, row:int, tile:int) {
+        let previous = self.current_map.revision()
+        self.current_map.set(column, row, tile)
+        if self.current_map.revision() != previous { self.map_changed() }
+    }
+
+    func clear(column:int, row:int) {
+        let previous = self.current_map.revision()
+        self.current_map.clear(column, row)
+        if self.current_map.revision() != previous { self.map_changed() }
+    }
+
+    func clear() {
+        let previous = self.current_map.revision()
+        self.current_map.clear()
+        if self.current_map.revision() != previous { self.map_changed() }
+    }
+
+    func fill(tile:int) {
+        let previous = self.current_map.revision()
+        self.current_map.fill(tile)
+        if self.current_map.revision() != previous { self.map_changed() }
+    }
+
+    func coordinate_at(point:Math.Vec2) Scene2D.TileCoordinate? {
+        return self.current_map.coordinate_at(point)
+    }
+
+    func cell_origin(column:int, row:int) Math.Vec2 {
+        return self.current_map.cell_origin(column, row)
+    }
+
+    func cell_center(column:int, row:int) Math.Vec2 {
+        return self.current_map.cell_center(column, row)
+    }
+
+    func sampling() Scene2D.Sampling { return self.current_map.sampling() }
+    func sampling(value:Scene2D.Sampling) {
+        if self.current_map.sampling() == value { return }
+        self.current_map.sampling(value)
+        self.map_changed()
+    }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        self.require_scene_2d()
+        world.insert(entity, self.current_map)
+        self.map_dirty = false
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        if !self.map_dirty { return }
+        world.insert(entity, self.current_map)
+        self.map_dirty = false
+    }
+
+    private func map_changed() {
+        if self.map_dirty { return }
+        self.map_dirty = true
+        self.changed()
+    }
+}

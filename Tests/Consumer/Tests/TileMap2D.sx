@@ -1,0 +1,135 @@
+use GFX.Application
+use GFX.Assets.Image
+use GFX.Color
+use GFX.ECS
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Scene2D
+use STD.Math
+
+class ObservedMap:Nodes.TileMap2D {
+    var synchronizations:int = 0
+    var edit_on_process:bool = false
+
+    init(atlas:Scene2D.TileAtlas):super(atlas, 4, 3) { self.set_process(false) }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        self.synchronizations++
+        super.synchronize(world, entity)
+    }
+
+    override func on_process(delta:float) {
+        if !self.edit_on_process { return }
+        self.fill(1)
+        self.clear(0, 0)
+        self.set(3, 2, 2)
+        self.color = Color.cyan_300()
+        self.set_process(false)
+    }
+}
+
+test "TileMap2D uses the ECS grid operations and local coordinates" {
+    var images = Image.Store()
+    let atlas = Scene2D.TileAtlas(images.add(Image()), 8, 4)
+    var node = Nodes.TileMap2D(atlas, 4, 3)
+    var ecs = Scene2D.TileMap(atlas, 4, 3)
+    assert(reflect(node).types[1] == "GFX.Nodes.Node2D")
+    assert(node.atlas().image() == atlas.image())
+    assert(node.columns() == 4 && node.rows() == 3)
+    assert(node.size() == Math.Vec2(32.0, 12.0))
+    assert(node.sampling() == Scene2D.Sampling.pixelated)
+    assert(node.visible && node.color == Color.white())
+    assert(node.layer == 0 && node.depth == 0.0)
+    node.fill(1)
+    ecs.fill(1)
+    node.set(2, 1, 3)
+    ecs.set(2, 1, 3)
+    node.clear(0, 0)
+    ecs.clear(0, 0)
+    for row in 0...3 {
+        for column in 0...4 {
+            assert(node.tile(column, row) == ecs.tile(column, row))
+            assert(node.cell_origin(column, row) == ecs.cell_origin(column, row))
+            assert(node.cell_center(column, row) == ecs.cell_center(column, row))
+            let coordinate = node.coordinate_at(node.cell_center(column, row))!
+            assert(coordinate.column == column && coordinate.row == row)
+        }
+    }
+    assert(!node.contains(-1, 0) && !node.contains(4, 0))
+    assert(node.coordinate_at(Math.Vec2(-0.1, 0.0)) == null)
+    assert(node.coordinate_at(node.size()) == null)
+    node.clear()
+    assert(node.tile(2, 1) == null)
+}
+
+test "TileMap2D batches edits preserves ECS snapshots and retains cells across remounts" {
+    var images = Image.Store()
+    let atlas = Scene2D.TileAtlas(images.add(Image()), 8, 4)
+    var tiles = ObservedMap(atlas)
+    tiles.set(1, 1, 0)
+    tiles.position = Math.Vec2(2.0)
+    var left = Nodes.Node2D("Left", Math.Vec2(10.0))..add_child(tiles)
+    var right = Nodes.Node2D("Right", Math.Vec2(20.0))
+    var root = Nodes.Node()..add_child(left)..add_child(right)
+    var app = Application()
+        ..add_plugin(Plugins.Window(Plugins.Window.Settings()..hidden = true..width = 64..height = 64))
+        ..add_plugin(Plugins.Nodes(root))
+    app.run_schedule(Application.Schedule.startup)
+    let original = tiles.entity()!
+    var resources = app.resources()
+    var world:@ECS.World = resources.get<ECS.World>()
+    assert(app.has_plugin("GFX.Scene2D.Plugin"))
+    assert(!app.has_plugin("GFX.Scene3D.Plugin"))
+    assert(world.has<Scene2D.TileMap>(original))
+    assert(world.entities().count() == 4)
+    assert(world.get<Scene2D.Transform>(original).position == Math.Vec2(12.0))
+    assert(!tiles.is_processing())
+    assert(tiles.synchronizations == 0)
+    tiles.set(1, 1, 0)
+    tiles.clear(0, 0)
+    tiles.visible = true
+    tiles.sampling(Scene2D.Sampling.pixelated)
+    app.run_schedule(Application.Schedule.update)
+    assert(tiles.synchronizations == 0)
+
+    tiles.set(1, 1, 2)
+    tiles.set(2, 1, 3)
+    tiles.layer = 4
+    tiles.depth = 0.25
+    tiles.sampling(Scene2D.Sampling.smooth)
+    assert(world.get<Scene2D.TileMap>(original).tile(1, 1)! == 0)
+    assert(world.get<Scene2D.TileMap>(original).tile(2, 1) == null)
+    app.run_schedule(Application.Schedule.update)
+    assert(tiles.synchronizations == 1)
+    assert(world.get<Scene2D.TileMap>(original).tile(1, 1)! == 2)
+    assert(world.get<Scene2D.TileMap>(original).layer == 4)
+    assert(world.get<Scene2D.TileMap>(original).depth == 0.25)
+    assert(world.get<Scene2D.TileMap>(original).sampling() == Scene2D.Sampling.smooth)
+    tiles.edit_on_process = true
+    tiles.set_process(true)
+    app.run_schedule(Application.Schedule.update)
+    assert(tiles.synchronizations == 2)
+    assert(world.get<Scene2D.TileMap>(original).tile(0, 0) == null)
+    assert(world.get<Scene2D.TileMap>(original).tile(3, 2)! == 2)
+    assert(world.get<Scene2D.TileMap>(original).color == Color.cyan_300())
+
+    left.enable(false)
+    app.run_schedule(Application.Schedule.update)
+    assert(!world.is_enabled(original))
+    tiles.visible = false
+    tiles.clear()
+    tiles.set(0, 2, 3)
+    left.remove_child(tiles)
+    right.add_child(tiles)
+    app.run_schedule(Application.Schedule.update)
+    assert(!world.is_alive(original))
+    assert(world.is_enabled(tiles.entity()!))
+    assert(tiles.ready_count() == 2)
+    assert(world.get<Scene2D.Transform>(tiles.entity()!).position == Math.Vec2(22.0))
+    assert(!world.get<Scene2D.TileMap>(tiles.entity()!).visible)
+    assert(world.get<Scene2D.TileMap>(tiles.entity()!).tile(0, 2)! == 3)
+    assert(world.get<Scene2D.TileMap>(tiles.entity()!).tile(3, 2) == null)
+    app.run_schedule(Application.Schedule.shutdown)
+    assert(tiles.entity() == null)
+    assert(tiles.tile(0, 2)! == 3)
+}

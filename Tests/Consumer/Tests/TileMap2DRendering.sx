@@ -1,0 +1,67 @@
+use GFX.Application
+use GFX.Assets.Image
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Rendering
+use GFX.Scene2D
+use STD.Math
+
+class TileRoot:Nodes.Node {
+    var tiles:Nodes.TileMap2D? = null
+    var frames:int = 0
+
+    override func on_process(delta:float) {
+        var resources = self.resources()
+        var images = resources.get_mut<Image.Store>()
+        var pixels:uint8[] = []
+        for _ in 0...64 { pixels.append(255 as uint8) }
+        let atlas = Scene2D.TileAtlas(images.add(Image.rgba8(4, 4, pixels)), 4, 4)
+        var tiles = Nodes.TileMap2D(atlas, 256, 256)
+        tiles.position = Math.Vec2(-512.0)
+        tiles.fill(0)
+        self.tiles = tiles
+        self.add_child(tiles)
+        self.set_process(false)
+    }
+}
+
+func inspect_tiles(root:&TileRoot, renderer:@Rendering.Renderer, controller:&Application.Controller) {
+    root.frames++
+    if var tiles = root.tiles {
+        let instances = renderer.stats().instances()
+        if root.frames <= 2 {
+            assert(renderer.stats().draw_calls() == 1)
+            assert(instances > 0 && instances < 2_000)
+        } elif root.frames == 4 || root.frames == 7 {
+            assert(renderer.stats().draw_calls() == 1)
+            assert(instances == 1)
+        } else {
+            assert(renderer.stats().draw_calls() == 0)
+            assert(instances == 0)
+        }
+        if root.frames == 2 { tiles.clear() }
+        elif root.frames == 3 { tiles.set(128, 128, 0) }
+        elif root.frames == 4 { tiles.visible = false }
+        elif root.frames == 5 {
+            tiles.visible = true
+            tiles.enable(false)
+        } elif root.frames == 6 { tiles.enable(true) }
+        elif root.frames == 7 { controller.stop() }
+    } else { panic("TileMap2D was not mounted before rendering") }
+}
+
+test "a late TileMap2D alone activates rendering and culls its retained grid" {
+    var root = TileRoot()
+    var app = Application()
+        ..add_resource(root)
+        ..add_plugin(Plugins.Window(Plugins.Window.Settings()
+            ..title = "TileMap2D consumer"..width = 128..height = 128..hidden = true))
+        ..add_plugin(Plugins.Nodes(root))
+        ..add_after_system(Application.Schedule.render, inspect_tiles)
+    assert(!app.has_plugin("GFX.Scene2D.Plugin"))
+    assert(app.run() == 0)
+    assert(app.has_plugin("GFX.Scene2D.Plugin"))
+    assert(!app.has_plugin("GFX.Scene3D.Plugin"))
+    assert(root.frames == 7)
+    assert(root.tiles!.entity() == null)
+}

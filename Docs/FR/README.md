@@ -6,7 +6,8 @@ de posséder leurs composants et leurs renderers.
 
 Voir aussi [Communiquer entre Nodes](Events.md) et
 [Détecter avec Area2D et Raycast2D](Sensors2D.md), ainsi que
-[Dessiner un panneau en 3D](Canvas3D.md).
+[Dessiner un panneau en 3D](Canvas3D.md) et
+[Construire une couche de tuiles](TileMap2D.md).
 
 ## Principe
 
@@ -23,6 +24,7 @@ Chaque classe de nœud représente une fonctionnalité :
   `GFX.Assets` ;
 - `Canvas2D` ajoute un dessin vectoriel `GFX.Canvas` rendu par Scene2D ;
 - `Canvas3D` place un dessin Canvas sur un panneau rendu par Scene3D ;
+- `TileMap2D` place une couche de tuiles carrées ou rectangulaires ;
 - `CharacterBody2D` et `StaticBody2D` ajoutent le déplacement avec collisions et
   les obstacles fixes, avec `Plugins.Physics2D` ;
 - `Area2D` détecte les chevauchements sans bloquer les corps ;
@@ -72,8 +74,8 @@ func main() {
 ```
 
 `Plugins.Nodes` installe le monde ECS, le temps et les magasins d’assets.
-Monter un `Camera2D`, `Sprite2D` ou `Canvas2D` active `Scene2D` ; monter un
-`Camera3D`, `Sprite3D` ou `Canvas3D` active `Scene3D`. Chaque scène apporte
+Monter un `Camera2D`, `Sprite2D`, `Canvas2D` ou `TileMap2D` active `Scene2D`.
+Monter un `Camera3D`, `Sprite3D` ou `Canvas3D` active `Scene3D`. Chaque scène apporte
 ses dépendances Rendering, GPU, Window et Input. Les simples `Node`, `Node2D`
 et `Node3D` restent utilisables sans fenêtre ; la simulation `Physics2D` reste
 explicite.
