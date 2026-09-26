@@ -60,6 +60,26 @@ a cell's local origin; `cell_center(column, row)` returns its center.
 `Scene2D.TileCoordinate?`, or returns `null` outside the grid. A pointer position
 must first be converted from viewport to world coordinates, then into the map's
 local space.
+## Nine-tile surfaces and collisions
+
+`fill(column, row, columns, rows, patch)` accepts `Scene2D.TilePatch`, with the
+same coordinates and contract as the ECS component. Supply nine indices or use
+`Scene2D.TilePatch.atlas(top_left, columns)`. The rectangle must contain at least
+2 × 2 cells; edges and center repeat while corners remain fixed.
+
+Set `collision_enabled = true` and install `Plugins.Physics2D` to make every
+occupied cell solid. The initial value is `false`. `collision_filter` configures this layer's
+categories, mask and collision group. The Node adds
+`Physics.TileMapCollider2D`; the physics plugin owns the body and merges solid
+rectangles. Editing the Node updates collisions without reconstruction code in
+the game. Visibility does not affect physics; disabling the branch suspends
+collisions. Global scale must remain one. Shapes use cell dimensions and the
+plugin's `scene_units_per_meter`.
+
+The renderer batches visible cells into one instanced draw per layer, retains
+their preparation and skips unchanged GPU transfers. Stable frame cost depends
+on the visible portion, rather than total level area.
+
 
 ## Use ECS directly
 
@@ -68,7 +88,7 @@ use the same operations on `Scene2D.TileMap`, also available through the
 `Components.TileMap2D` alias, without installing Nodes.
 
 This version covers square and rectangular grids with fixed dimensions.
-Automatic terrains, dual grids, hexagonal or isometric layouts, and tile
-collisions remain future additions to the ECS foundation.
+Automatic terrains, dual grids, hexagonal and isometric layouts remain future
+additions to the ECS foundation.
 
 [Back to GFX.Nodes](README.md)

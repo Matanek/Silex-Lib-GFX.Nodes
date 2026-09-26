@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- TileMap2D accepte les motifs TilePatch et collision_enabled ; le rendu et les collisions restent portés par les composants ECS Scene2D et Physics.
+
 - Ajout de `Nodes.TileMap2D` : grille rectangulaire, édition des cellules, conversions locales et réglages de rendu. La couche active automatiquement Scene2D et synchronise les éditions regroupées vers son composant ECS existant.
 
 - Ajout de `Nodes.Canvas3D` pour dessiner un panneau dans le monde 3D avec cadre, densité, taille monde, matériau et ombres. Il active automatiquement Scene3D et utilise ses composants ECS et son cache de surfaces existants.

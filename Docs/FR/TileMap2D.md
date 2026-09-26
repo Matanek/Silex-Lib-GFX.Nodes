@@ -64,6 +64,28 @@ carte** en `Scene2D.TileCoordinate?`, ou retourne `null` hors de la grille.
 Une position de pointeur doit d’abord être convertie depuis le viewport vers
 le monde, puis vers l’espace local de la carte.
 
+## Surfaces de neuf tuiles et collisions
+
+`fill(column, row, columns, rows, patch)` accepte `Scene2D.TilePatch`, avec les
+mêmes coordonnées et le même contrat que le composant ECS. Les neuf indices
+peuvent être explicites ou provenir de `Scene2D.TilePatch.atlas(top_left, columns)`.
+Le rectangle doit mesurer au moins 2 × 2 cellules ; les bords et le centre se
+répètent, les coins restent fixes.
+
+Activer `collision_enabled = true` et installer `Plugins.Physics2D` rend toutes
+les cellules occupées solides. La valeur initiale est `false`. `collision_filter` configure les catégories,
+le masque et le groupe de collision de cette couche. Le Node ajoute
+`Physics.TileMapCollider2D` et laisse le plugin physique posséder le corps et
+fusionner les rectangles. Une édition du Node met donc à jour les collisions
+sans code de reconstruction dans le jeu. La visibilité ne change pas la
+physique ; la désactivation de la branche suspend les collisions. L'échelle
+globale doit rester unitaire. Les formes utilisent les dimensions des cellules
+et le `scene_units_per_meter` du plugin.
+
+Le renderer regroupe les cellules visibles en un dessin instancié par couche,
+conserve leur préparation et évite les transferts GPU inchangés. Le coût des
+frames stables dépend de la partie visible, pas de la surface totale du niveau.
+
 ## Utiliser directement l’ECS
 
 Le Node monte `Scene2D.Transform` et `Scene2D.TileMap`. Un consommateur ECS
@@ -72,6 +94,6 @@ sous l’alias `Components.TileMap2D`, sans installer Nodes.
 
 Cette version couvre les grilles carrées et rectangulaires de dimensions fixes.
 Les terrains automatiques, le dual grid, les dispositions hexagonales ou
-isométriques et les collisions de tuiles restent à ajouter au socle ECS.
+isométriques restent à ajouter au socle ECS.
 
 [Retour à GFX.Nodes](README.md)

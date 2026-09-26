@@ -1,0 +1,87 @@
+use GFX.Application
+use GFX.Assets.Image
+use GFX.ECS
+use GFX.Nodes
+use GFX.Physics
+use GFX.Plugins
+use GFX.Scene2D
+use STD.Math
+
+func atlas() Scene2D.TileAtlas {
+    var images = Image.Store()
+    return Scene2D.TileAtlas(images.add(Image()), 18, 18)
+}
+
+func frame(app:Application) {
+    app.run_schedule(Application.Schedule.update)
+    app.run_schedule(Application.Schedule.post_update)
+}
+
+test "merge occupied cells exactly and keep holes empty" {
+    var map = Scene2D.TileMap(atlas(), 128, 64)
+    map.fill(0)
+    let collider = Physics.TileMapCollider2D()
+    assert(collider.rectangles(map).count() == 1)
+    assert(collider.body(map, 18.0).colliders().count() == 1)
+    map.clear(40, 30)
+    var covered:int[] = []
+    for _ in 0...8192 { covered.append(0) }
+    let rectangles = collider.rectangles(map)
+    assert(rectangles.count() <= 4)
+    for rectangle in rectangles {
+        for row in rectangle.row...rectangle.row + rectangle.rows {
+            for column in rectangle.column...rectangle.column + rectangle.columns {
+                covered[row * 128 + column]++
+            }
+        }
+    }
+    for row in 0...64 {
+        for column in 0...128 {
+            var expected = 1
+            if column == 40 && row == 30 { expected = 0 }
+            assert(covered[row * 128 + column] == expected)
+        }
+    }
+}
+
+test "node tile collisions retain bodies until content changes and clean up" {
+    var tiles = Nodes.TileMap2D(atlas(), 128, 64)..collision_enabled = true
+    tiles.fill(0)
+    var app = Application()
+        ..add_plugin(Plugins.Physics2D(Plugins.Physics2D.Settings()..scene_units_per_meter = 18.0))
+        ..add_plugin(Plugins.Nodes(tiles))
+    app.run_schedule(Application.Schedule.startup)
+    frame(app)
+    let entity = tiles.entity()!
+    var resources = app.resources()
+    var world = resources.get_mut<ECS.World>()
+    var body = world.get<Physics.PhysicsBody2D>(entity).body()!
+    assert(body.collider_count() == 1)
+    frame(app)
+    assert(body.is_valid())
+    tiles.color = GFX.Color.rgb(1.0, 0.0, 0.0)
+    frame(app)
+    assert(body.is_valid())
+    tiles.enable(false)
+    frame(app)
+    assert(body.is_valid() && !body.is_enabled())
+    tiles.enable(true)
+    frame(app)
+    assert(body.is_enabled())
+    tiles.clear(40, 30)
+    frame(app)
+    assert(!body.is_valid())
+    assert(world.get<Physics.PhysicsBody2D>(entity).body()!.collider_count() <= 4)
+    tiles.clear()
+    frame(app)
+    assert(world.get<Physics.PhysicsBody2D>(entity).body()!.collider_count() == 0)
+    tiles.collision_enabled = false
+    frame(app)
+    assert(!world.has<Physics.PhysicsBody2D>(entity))
+    assert(app.resources().get<Physics.World2D>().body_count() == 0)
+    tiles.collision_enabled = true
+    frame(app)
+    assert(world.has<Physics.PhysicsBody2D>(entity))
+    app.run_schedule(Application.Schedule.shutdown)
+    assert(app.resources().get<Physics.World2D>().body_count() == 0)
+}

@@ -1,11 +1,38 @@
 use GFX.Color
 use GFX.ECS
+use GFX.Physics
 use GFX.Scene2D
 use STD.Math
 
 public class TileMap2D:Node2D {
     private var current_map:Scene2D.TileMap
     private var map_dirty:bool = false
+    private var collision_dirty:bool = false
+    private var collision_registered:bool = false
+    private var current_collision:bool = false
+    private var current_filter:Physics.CollisionFilter2D = Physics.CollisionFilter2D()
+
+    var collision_filter:Physics.CollisionFilter2D {
+        get { return self.current_filter }
+        set(value) {
+            if self.current_filter.category_bits == value.category_bits &&
+                self.current_filter.mask_bits == value.mask_bits &&
+                self.current_filter.group_index == value.group_index { return }
+            self.current_filter = value
+            self.collision_dirty = true
+            self.changed()
+        }
+    }
+
+    var collision_enabled:bool {
+        get { return self.current_collision }
+        set(value) {
+            if self.current_collision == value { return }
+            self.current_collision = value
+            self.collision_dirty = true
+            self.changed()
+        }
+    }
 
     var color:Color {
         get { return self.current_map.color }
@@ -93,6 +120,12 @@ public class TileMap2D:Node2D {
         if self.current_map.revision() != previous { self.map_changed() }
     }
 
+    func fill(column:int, row:int, columns:int, rows:int, patch:Scene2D.TilePatch) {
+        let previous = self.current_map.revision()
+        self.current_map.fill(column, row, columns, rows, patch)
+        if self.current_map.revision() != previous { self.map_changed() }
+    }
+
     func coordinate_at(point:Math.Vec2) Scene2D.TileCoordinate? {
         return self.current_map.coordinate_at(point)
     }
@@ -117,13 +150,34 @@ public class TileMap2D:Node2D {
         self.require_scene_2d()
         world.insert(entity, self.current_map)
         self.map_dirty = false
+        self.collision_registered = false
+        self.synchronize_collision(world, entity)
     }
 
     override func synchronize(world:&ECS.World, entity:ECS.Entity) {
         super.synchronize(world, entity)
+        self.synchronize_collision(world, entity)
         if !self.map_dirty { return }
         world.insert(entity, self.current_map)
         self.map_dirty = false
+    }
+
+    private func synchronize_collision(world:&ECS.World, entity:ECS.Entity) {
+        if self.current_collision {
+            if !self.resources().has<Physics.World2D>() {
+                panic("TileMap2D collisions require Plugins.Physics2D")
+            }
+            if !world.has<Physics.TileMapCollider2D>(entity) || self.collision_dirty {
+                world.insert(entity, Physics.TileMapCollider2D(self.current_filter))
+                if !self.collision_registered {
+                    self.register_physics_body()
+                    self.collision_registered = true
+                }
+            }
+        } elif self.collision_dirty {
+            world.remove<Physics.TileMapCollider2D>(entity)
+        }
+        self.collision_dirty = false
     }
 
     private func map_changed() {

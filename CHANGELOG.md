@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- TileMap2D now accepts TilePatch fills and collision_enabled; Scene2D and Physics ECS components continue to own rendering and collisions.
+
 - Added `Nodes.TileMap2D`: rectangular grids, cell editing, local coordinate conversion, and rendering settings. The layer automatically activates Scene2D and synchronizes coalesced edits to its existing ECS component.
 
 - Added `Nodes.Canvas3D` for drawing a panel in the 3D world with a frame, raster density, world size, material, and shadows. It automatically activates Scene3D and uses its existing ECS components and surface cache.
