@@ -1,0 +1,56 @@
+use GFX.Application
+use GFX.ECS
+use GFX.Nodes
+use GFX.Plugins
+use GFX.Scene2D
+use STD.Math
+
+test "Parallax2D inherits updates and overrides without changing world transforms" {
+    // Spatial nodes only: no renderer, GPU or window is started.
+    var group = Nodes.Parallax2D(factor:Math.Vec2(0.2, 0.0), repeat_size:Math.Vec2(96.0, 0.0))
+    var child = Nodes.Node2D("Child", position:Math.Vec2(12.0, 8.0))
+    var grandchild = Nodes.Node2D("Grandchild", position:Math.Vec2(2.0, 3.0))
+    var nested = Nodes.Parallax2D(factor:Math.Vec2(0.8))
+    var nested_child = Nodes.Node2D("Nested child")
+    nested.add_child(nested_child)
+    child.add_child(grandchild)
+    group.add_child(child)
+    group.add_child(nested)
+    var root = Nodes.Node2D("Root")..add_child(group)
+    var app = Application()..add_plugin(Plugins.Nodes(root))
+    app.run_schedule(Application.Schedule.startup)
+    {
+        var world = app.resources().get<ECS.World>()
+        assert(world.get<Scene2D.Parallax>(grandchild.entity()!).factor == Math.Vec2(0.2, 0.0))
+        assert(world.get<Scene2D.Parallax>(nested_child.entity()!).factor == Math.Vec2(0.8))
+        assert(world.get<Scene2D.Transform>(grandchild.entity()!).position == Math.Vec2(14.0, 11.0))
+    }
+    group.factor = Math.Vec2(0.4, 0.1)
+    group.origin = Math.Vec2(160.0, 90.0)
+    group.repeat_size = Math.Vec2(120.0, 60.0)
+    app.run_schedule(Application.Schedule.update)
+    {
+        var world = app.resources().get<ECS.World>()
+        let effect = world.get<Scene2D.Parallax>(grandchild.entity()!)
+        assert(effect.factor == group.factor && effect.origin == group.origin)
+        assert(effect.repeat_size == group.repeat_size)
+        assert(world.get<Scene2D.Parallax>(nested_child.entity()!).factor == Math.Vec2(0.8))
+        assert(world.get<Scene2D.Transform>(grandchild.entity()!).position == Math.Vec2(14.0, 11.0))
+    }
+    group.position = Math.Vec2(20.0, 0.0)
+    app.run_schedule(Application.Schedule.update)
+    {
+        var world = app.resources().get<ECS.World>()
+        assert(world.get<Scene2D.Parallax>(nested_child.entity()!).factor == Math.Vec2(0.8))
+        assert(world.get<Scene2D.Transform>(grandchild.entity()!).position == Math.Vec2(34.0, 11.0))
+    }
+    group.remove_child(child)
+    root.add_child(child)
+    app.run_schedule(Application.Schedule.update)
+    {
+        var world = app.resources().get<ECS.World>()
+        assert(!world.has<Scene2D.Parallax>(child.entity()!))
+        assert(!world.has<Scene2D.Parallax>(grandchild.entity()!))
+    }
+    app.run_schedule(Application.Schedule.shutdown)
+}

@@ -15,6 +15,7 @@ scene components, while `Canvas2D` owns vector drawing commands backed by
 `GFX.Canvas`. `Canvas3D` places the same drawing API on a 3D panel with
 independent raster density, world size, and a Scene3D panel material.
 `TileMap2D` provides a retained rectangular tile layer backed by `Scene2D.TileMap`.
+`Parallax2D` applies inherited parallax and repetition settings to descendant sprites and tile maps.
 
 Children can be added, removed and reparented at runtime, including from
 lifecycle callbacks. Object links change immediately; ECS mounting and teardown

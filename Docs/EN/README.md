@@ -393,3 +393,5 @@ Callbacks do not overlap parallel systems in the same context because their
 resource accesses are chosen dynamically. `SceneTree` and `ECS.World` are
 already in use by node processing: do not replace them, remove them, or clear
 the store during a callback. Use node methods to modify the tree.
+
+For repeating distant scenery, see [Create a parallax background](Parallax2D.md).

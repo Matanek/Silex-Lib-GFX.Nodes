@@ -1,0 +1,41 @@
+use GFX.Scene2D
+use STD.Math
+
+// Descendant sprites and tile maps inherit these rendering settings.
+public class Parallax2D:Node2D {
+    private var settings:Scene2D.Parallax
+
+    var factor:Math.Vec2 {
+        get { return self.settings.factor }
+        set(value) {
+            if self.settings.factor == value { return }
+            self.settings.factor = value
+            self.parent_transform_2d_changed(false)
+        }
+    }
+
+    var origin:Math.Vec2 {
+        get { return self.settings.origin }
+        set(value) {
+            if self.settings.origin == value { return }
+            self.settings.origin = value
+            self.parent_transform_2d_changed(false)
+        }
+    }
+
+    var repeat_size:Math.Vec2 {
+        get { return self.settings.repeat_size }
+        set(value) {
+            if self.settings.repeat_size == value { return }
+            self.settings.repeat_size = value
+            self.parent_transform_2d_changed(false)
+        }
+    }
+
+    init(name:str = "Parallax2D", factor:Math.Vec2 = Math.Vec2(0.5),
+         origin:Math.Vec2 = Math.Vec2(), repeat_size:Math.Vec2 = Math.Vec2()):super(name) {
+        self.settings = Scene2D.Parallax(factor, origin, repeat_size)
+    }
+
+    override func own_parallax() Scene2D.Parallax? { return self.settings }
+}

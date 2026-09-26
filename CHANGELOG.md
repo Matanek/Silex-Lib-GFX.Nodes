@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Added `Parallax2D`: `Node2D` descendants inherit the Scene2D parallax component. Nested groups can override settings; edits and remounts update ECS components.
+
 - TileMap2D now accepts TilePatch fills and collision_enabled; Scene2D and Physics ECS components continue to own rendering and collisions.
 
 - Added `Nodes.TileMap2D`: rectangular grids, cell editing, local coordinate conversion, and rendering settings. The layer automatically activates Scene2D and synchronizes coalesced edits to its existing ECS component.

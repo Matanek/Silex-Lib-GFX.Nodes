@@ -401,3 +401,5 @@ même contexte, puisque les ressources auxquelles ils accèdent sont choisies
 dynamiquement. `SceneTree` et `ECS.World` sont déjà utilisés par le traitement
 des nœuds : ne pas les remplacer, les retirer ou vider le magasin pendant un
 callback. Pour modifier l’arbre, utiliser les méthodes des nœuds.
+
+Pour un décor distant répétitif, voir [Créer un fond en parallaxe](Parallax2D.md).

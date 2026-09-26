@@ -66,6 +66,7 @@ public class Node2D:Node {
             }
         }
         world.insert(entity, self.global_transform(world))
+        self.synchronize_parallax(world, entity)
         self.transform_dirty = false
     }
 
@@ -74,6 +75,7 @@ public class Node2D:Node {
         if !self.transform_dirty { return }
         if var parent = self.spatial_parent { parent.flush_synchronization(world) }
         world.insert(entity, self.global_transform(world))
+        self.synchronize_parallax(world, entity)
         self.transform_dirty = false
         if self.child_count() > 0 { self.flush_children_2d(world) }
     }
@@ -110,6 +112,19 @@ public class Node2D:Node {
             )
         }
         return global
+    }
+
+    protected func own_parallax() Scene2D.Parallax? { return null }
+
+    private func synchronize_parallax(world:&ECS.World, entity:ECS.Entity) {
+        var effect = self.own_parallax()
+        if effect == null {
+            if let parent = self.spatial_parent_entity {
+                if world.has<Scene2D.Parallax>(parent) { effect = world.get<Scene2D.Parallax>(parent) }
+            }
+        }
+        if let settings = effect { world.insert(entity, settings) }
+        else { world.remove<Scene2D.Parallax>(entity) }
     }
 
     protected func set_global_position(world:@ECS.World, value:Math.Vec2) {
