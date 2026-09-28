@@ -1,0 +1,57 @@
+use GFX.Application
+use GFX.ECS
+use GFX.Nodes
+use GFX.Physics
+use GFX.Plugins
+use GFX.Scene3D
+use STD.Math
+
+func run_physics_frame(application:Application, delta:float) {
+    var resources = application.resources()
+    var frame_time = resources.get_mut<Application.FrameTime>()
+    frame_time.delta = delta
+    application.run_schedule(Application.Schedule.update)
+    application.run_schedule(Application.Schedule.post_update)
+}
+
+test "StaticBody3D inherits a transformed parent and tracks its global pose" {
+    var parent = Nodes.Node3D(
+        "Parent", Math.Vec3(5.0, 0.0, 0.0),
+        Math.Quat.angle_axis(Math.radians(90.0), Math.Vec3.back())
+    )
+    var child = Nodes.StaticBody3D(
+        Physics.Shape3D.box(Physics.Box3D(Math.Vec3(1.0))), "Wall"
+    )..position = Math.Vec3(2.0, 0.0, 0.0)
+    parent.add_child(child)
+    var root = Nodes.Node()..add_child(parent)
+    var application = Application()
+        ..add_plugin(Plugins.Physics3D(Plugins.Physics3D.Settings()
+            ..world = (Physics.World3DSettings() ..gravity = Math.Vec3())
+            ..fixed_delta = 0.1))
+        ..add_plugin(Plugins.Nodes(root))
+    application.run_schedule(Application.Schedule.startup)
+    run_physics_frame(application, 0.1)
+    var resources = application.resources()
+    let entity = child.entity()!
+    let initial = resources.get<ECS.World>().get<Scene3D.Transform>(entity)
+    assert(Math.abs(initial.position.x - 5.0) < 0.00001)
+    assert(Math.abs(initial.position.y - 2.0) < 0.00001)
+    {
+        let component = resources.get<ECS.World>().get<Physics.PhysicsBody3D>(entity)
+        if let body = component.body() {
+            assert(body.position().nearly_equal(initial.position, 0.00001))
+        } else { panic("StaticBody3D did not bind") }
+    }
+    parent.position = Math.Vec3(10.0, 0.0, 0.0)
+    run_physics_frame(application, 0.1)
+    let moved = resources.get<ECS.World>().get<Scene3D.Transform>(entity)
+    assert(Math.abs(moved.position.x - 10.0) < 0.00001)
+    assert(Math.abs(moved.position.y - 2.0) < 0.00001)
+    {
+        let component = resources.get<ECS.World>().get<Physics.PhysicsBody3D>(entity)
+        if let body = component.body() {
+            assert(body.position().nearly_equal(moved.position, 0.00001))
+        } else { panic("StaticBody3D lost its binding") }
+    }
+    application.run_schedule(Application.Schedule.shutdown)
+}

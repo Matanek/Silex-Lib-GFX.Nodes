@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Ajout de `StaticBody3D` : obstacle fixe sous un parent `Node3D`, avec pose
+  globale synchronisée par `Plugins.Physics3D` et échelle unitaire vérifiée.
+
 - Ajout de `Parallax2D` : les descendants `Node2D` héritent du composant Scene2D de parallaxe. Un sous-groupe peut remplacer les réglages ; modifications et remontages mettent à jour les composants ECS.
 
 - TileMap2D accepte les motifs TilePatch et collision_enabled ; le rendu et les collisions restent portés par les composants ECS Scene2D et Physics.

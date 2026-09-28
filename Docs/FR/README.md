@@ -7,7 +7,8 @@ de posséder leurs composants et leurs renderers.
 Voir aussi [Communiquer entre Nodes](Events.md) et
 [Détecter avec Area2D et Raycast2D](Sensors2D.md), ainsi que
 [Dessiner un panneau en 3D](Canvas3D.md) et
-[Construire une couche de tuiles](TileMap2D.md).
+[Construire une couche de tuiles](TileMap2D.md), ou
+[Placer un obstacle fixe en 3D](StaticBody3D.md).
 
 ## Principe
 
@@ -27,6 +28,8 @@ Chaque classe de nœud représente une fonctionnalité :
 - `TileMap2D` place une couche de tuiles carrées ou rectangulaires ;
 - `CharacterBody2D` et `StaticBody2D` ajoutent le déplacement avec collisions et
   les obstacles fixes, avec `Plugins.Physics2D` ;
+- `StaticBody3D` ajoute un obstacle fixe sous un parent `Node3D`, avec
+  `Plugins.Physics3D` ;
 - `Area2D` détecte les chevauchements sans bloquer les corps ;
 - `Raycast2D` recherche le premier obstacle sur un segment.
 

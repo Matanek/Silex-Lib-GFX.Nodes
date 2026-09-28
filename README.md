@@ -51,6 +51,8 @@ settings are preserved. Plain spatial nodes remain usable without a window.
 `StaticBody2D` provides fixed obstacles. Install `Plugins.Physics2D` to run their
 simulation and use `on_physics_process` for fixed-step movement. Physics is a
 package dependency; starting its simulation remains explicit.
+`StaticBody3D` adds fixed 3D obstacles under `Node3D` transforms. Install
+`Plugins.Physics3D` for its headless world and fixed-step synchronization.
 
 - [French documentation](Docs/FR/README.md)
 - [English documentation](Docs/EN/README.md)

@@ -7,7 +7,8 @@ the owners of their components and renderers.
 See also [Communicate between Nodes](Events.md) and
 [Detect with Area2D and Raycast2D](Sensors2D.md), as well as
 [Draw a panel in 3D](Canvas3D.md) and
-[Build a tile layer](TileMap2D.md).
+[Build a tile layer](TileMap2D.md), or
+[Place a fixed 3D obstacle](StaticBody3D.md).
 
 ## Principle
 
@@ -26,6 +27,8 @@ Each node class represents one capability:
 - `TileMap2D` places a layer of square or rectangular tiles;
 - `CharacterBody2D` and `StaticBody2D` add collision-aware motion and fixed
   obstacles, using `Plugins.Physics2D`;
+- `StaticBody3D` adds a fixed obstacle below a `Node3D` parent, using
+  `Plugins.Physics3D`;
 - `Area2D` detects overlaps without blocking bodies;
 - `Raycast2D` finds the first obstacle along a segment.
 

@@ -1,0 +1,38 @@
+use GFX.ECS
+use GFX.Physics
+use GFX.Scene3D
+use STD.Math
+
+// Geometry uses physics metres; the Node3D hierarchy supplies a global pose.
+public class StaticBody3D:Node3D {
+    private let body_settings:Physics.RigidBody3DSettings
+
+    init(
+        shape:Physics.Shape3D,
+        name:str = "StaticBody3D"
+    ):super(name) {
+        self.body_settings = Physics.RigidBody3DSettings()
+            ..body_type = Physics.BodyType3D.fixed
+            ..shape = shape
+    }
+
+    override func mount_components(world:&ECS.World, entity:ECS.Entity) {
+        super.mount_components(world, entity)
+        if !self.resources().has<Physics.World3D>() {
+            panic("StaticBody3D requires Plugins.Physics3D")
+        }
+        self.require_physics_scale(world, entity)
+        world.insert(entity, Physics.PhysicsBody3D(self.body_settings))
+    }
+
+    override func synchronize(world:&ECS.World, entity:ECS.Entity) {
+        super.synchronize(world, entity)
+        self.require_physics_scale(world, entity)
+    }
+
+    private func require_physics_scale(world:@ECS.World, entity:ECS.Entity) {
+        if !world.get<Scene3D.Transform>(entity).scale.nearly_equal(Math.Vec3(1.0), 0.00001) {
+            panic("StaticBody3D requires unit global scale; resize its collision shape instead")
+        }
+    }
+}
