@@ -57,4 +57,4 @@ package dependency; starting its simulation remains explicit.
 - [French documentation](Docs/FR/README.md)
 - [English documentation](Docs/EN/README.md)
 
-The package requires Silex 0.44.0 or newer.
+The package requires Silex 0.48.0 or newer.

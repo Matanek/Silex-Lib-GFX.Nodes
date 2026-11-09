@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-11-09
 
 - Added `StaticBody3D`: a fixed obstacle below a `Node3D` parent, with its
   global pose synchronized by `Plugins.Physics3D` and unit scale checked.

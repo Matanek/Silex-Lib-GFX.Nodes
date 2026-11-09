@@ -1,21 +1,21 @@
 {
   "name": "GFX.Nodes",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": {
     "en": "Object-oriented scene trees backed by GFX.Application and GFX.ECS.",
     "fr": "Arbres de scène orientés objet adossés à GFX.Application et GFX.ECS."
   },
   "authors": ["Matanek"],
-  "requires": { "silex": ">=0.44.0" },
+  "requires": { "silex": ">=0.48.0" },
   "dependencies": {
-    "GFX": "^0.40.0",
-    "GFX.Application": "^0.1.0",
-    "GFX.Assets": "^0.3.0",
-    "GFX.Canvas": "^0.4.0",
-    "GFX.ECS": "^0.2.0",
-    "GFX.Physics": "^0.7.0",
-    "GFX.Scene2D": "^0.3.0",
-    "GFX.Scene3D": "^0.3.0",
-    "STD": "^0.22.0"
+    "GFX": "^0.41.0",
+    "GFX.Application": "^0.2.0",
+    "GFX.Assets": "^0.4.0",
+    "GFX.Canvas": "^0.5.0",
+    "GFX.ECS": "^0.3.0",
+    "GFX.Physics": "^0.8.0",
+    "GFX.Scene2D": "^0.4.0",
+    "GFX.Scene3D": "^0.4.0",
+    "STD": "^0.23.0"
   }
 }
